@@ -1,6 +1,7 @@
 # Installing Knative Serving in Air-Gapped Environments
 
 This guide describes how to install Knative Serving with Kourier ingress in an air-gapped environment for use with NVIDIA Run:ai inference workloads.
+This guide uses version **1.18** as the reference.
 
 ## Prerequisites
 
@@ -9,17 +10,7 @@ This guide describes how to install Knative Serving with Kourier ingress in an a
 - `podman` or `docker` CLI
 - `helm` CLI (v3.14+)
 - `kubectl` CLI configured to access your air-gapped cluster
-- Kubernetes cluster meeting [Run:ai system requirements](../system-requirements.md)
-
-This guide uses version **1.18** as the reference.
-
-## Files in this Directory
-
-| File | Description |
-|------|-------------|
-| `pull-images.sh` | Script to pull and save Knative images (run on connected host) |
-| `push-images.sh` | Script to load and push images to private registry (run in air-gapped environment) |
-| `knative-serving.yaml` | KnativeServing CR configured for private registry |
+- Kubernetes cluster meeting knative operator system requirements: https://knative.dev/v1.18-docs/install/operator/knative-with-operators/
 
 ---
 
@@ -177,7 +168,6 @@ kubectl apply -f knative-serving.yaml
 Patch the ServiceAccounts to use the image pull secret (the CR setting doesn't propagate to pods):
 
 ```bash
-# Patch all ServiceAccounts in knative-serving namespace
 for sa in activator controller default net-kourier; do
     kubectl patch serviceaccount ${sa} -n knative-serving \
         -p '{"imagePullSecrets": [{"name": "knative-registry-creds"}]}'
@@ -220,7 +210,17 @@ kubectl get svc -n knative-serving kourier
 
 ---
 
-## Image Reference
+## Notes
+
+### Files in this Directory
+
+| File | Description |
+|------|-------------|
+| `pull-images.sh` | Script to pull and save Knative images (run on connected host) |
+| `push-images.sh` | Script to load and push images to private registry (run in air-gapped environment) |
+| `knative-serving.yaml` | KnativeServing CR configured for private registry |
+
+### Image Reference
 
 Knative Serving requires the following container images. Replace `${KNATIVE_VERSION}` with your target version (e.g., `1.18.0`):
 
