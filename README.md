@@ -3,6 +3,20 @@
 This guide describes how to install Knative Serving with Kourier ingress in an air-gapped environment for use with NVIDIA Run:ai inference workloads.
 This guide uses version **1.18** as the reference.
 
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Step 1: Download Knative Helm Chart (Connected Host)](#step-1-download-knative-helm-chart-connected-host)
+- [Step 2: Pull and Save Images (Connected Host)](#step-2-pull-and-save-images-connected-host)
+- [Step 3: Transfer Artifacts to Air-Gapped Environment](#step-3-transfer-artifacts-to-air-gapped-environment)
+- [Step 4: Load and Push Images to Private Registry](#step-4-load-and-push-images-to-private-registry)
+- [Step 5: Install Knative Operator with Private Registry](#step-5-install-knative-operator-with-private-registry)
+- [Step 6: Create KnativeServing with Private Registry](#step-6-create-knativeserving-with-private-registry)
+- [Step 7: Verify Installation](#step-7-verify-installation)
+- [Notes](#notes)
+  - [Files in this Directory](#files-in-this-directory)
+  - [Image Reference](#image-reference)
+
 ## Prerequisites
 
 - A connected host with internet access for downloading images and charts
