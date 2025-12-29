@@ -10,7 +10,8 @@
 #
 # Prerequisites:
 #   - knative-images.tar file from pull-images.sh
-#   - podman CLI
+#   - podman or docker CLI
+#   - Already logged in to the private registry (podman/docker login)
 #   - Network access to private registry
 
 set -e
@@ -36,6 +37,36 @@ IMAGES_TAR="${IMAGES_TAR:-knative-images.tar}"
 # ============================================================================
 
 echo "=== Knative Image Push Script ==="
+echo ""
+
+# Ask user for container utility preference
+echo "Which container utility would you like to use?"
+echo "  1) podman"
+echo "  2) docker"
+echo ""
+read -p "Enter choice [1/2]: " choice
+
+case "$choice" in
+    1|podman)
+        CONTAINER_CMD="podman"
+        ;;
+    2|docker)
+        CONTAINER_CMD="docker"
+        ;;
+    *)
+        echo "Invalid choice. Defaulting to podman."
+        CONTAINER_CMD="podman"
+        ;;
+esac
+
+# Verify the chosen tool is available
+if ! command -v "${CONTAINER_CMD}" &> /dev/null; then
+    echo "ERROR: ${CONTAINER_CMD} is not installed or not in PATH."
+    exit 1
+fi
+
+echo ""
+echo "Using: ${CONTAINER_CMD}"
 echo "Private Registry: ${PRIVATE_REGISTRY}"
 echo "Knative Version: ${KNATIVE_VERSION}"
 echo "Envoy Version: ${ENVOY_VERSION}"
@@ -45,18 +76,15 @@ echo ""
 # Check if tar file exists
 if [[ ! -f "${IMAGES_TAR}" ]]; then
     echo "ERROR: Images archive not found: ${IMAGES_TAR}"
-    echo "Make sure to transfer knative-images.tar from the internet-connected machine."
+    echo "Make sure to transfer knative-images.tar from the connected host."
     exit 1
 fi
 
-# Login to private registry (if authentication required)
-echo "Logging in to private registry..."
-podman login "${PRIVATE_REGISTRY}"
-
 # Load images from tar archive
+# Note: Script assumes you are already logged in to the private registry
 echo ""
 echo "Loading images from ${IMAGES_TAR}..."
-podman load -i "${IMAGES_TAR}"
+${CONTAINER_CMD} load -i "${IMAGES_TAR}"
 
 echo ""
 echo "Tagging and pushing images to ${PRIVATE_REGISTRY}..."
@@ -96,10 +124,10 @@ for mapping in "${IMAGE_MAPPINGS[@]}"; do
     
     echo "Tagging: ${src}"
     echo "     -> ${dst}"
-    podman tag "${src}" "${dst}"
+    ${CONTAINER_CMD} tag "${src}" "${dst}"
     
     echo "Pushing: ${dst}"
-    podman push "${dst}"
+    ${CONTAINER_CMD} push "${dst}"
     echo ""
 done
 

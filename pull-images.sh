@@ -2,7 +2,7 @@
 # pull-images.sh
 #
 # Script to pull Knative container images and save them as a tar archive.
-# Run this script on an internet-connected machine.
+# Run this script on a connected host with internet access.
 #
 # Usage: ./pull-images.sh
 
@@ -14,6 +14,36 @@ ENVOY_VERSION="${ENVOY_VERSION:-v1.34-latest}"
 OUTPUT_DIR="${OUTPUT_DIR:-knative-images}"
 
 echo "=== Knative Image Pull Script ==="
+echo ""
+
+# Ask user for container utility preference
+echo "Which container utility would you like to use?"
+echo "  1) podman"
+echo "  2) docker"
+echo ""
+read -p "Enter choice [1/2]: " choice
+
+case "$choice" in
+    1|podman)
+        CONTAINER_CMD="podman"
+        ;;
+    2|docker)
+        CONTAINER_CMD="docker"
+        ;;
+    *)
+        echo "Invalid choice. Defaulting to podman."
+        CONTAINER_CMD="podman"
+        ;;
+esac
+
+# Verify the chosen tool is available
+if ! command -v "${CONTAINER_CMD}" &> /dev/null; then
+    echo "ERROR: ${CONTAINER_CMD} is not installed or not in PATH."
+    exit 1
+fi
+
+echo ""
+echo "Using: ${CONTAINER_CMD}"
 echo "Knative Version: ${KNATIVE_VERSION}"
 echo "Envoy Version: ${ENVOY_VERSION}"
 echo "Output Directory: ${OUTPUT_DIR}"
@@ -53,7 +83,7 @@ echo ""
 
 for img in "${IMAGES[@]}"; do
     echo "Pulling: $img"
-    podman pull "$img"
+    ${CONTAINER_CMD} pull "$img"
 done
 
 echo ""
@@ -63,7 +93,7 @@ echo ""
 # Save all images to a single tar archive
 OUTPUT_FILE="${OUTPUT_DIR}/knative-images.tar"
 echo "Saving images to ${OUTPUT_FILE}..."
-podman save -o "${OUTPUT_FILE}" "${IMAGES[@]}"
+${CONTAINER_CMD} save -o "${OUTPUT_FILE}" "${IMAGES[@]}"
 
 echo ""
 echo "=== Done ==="

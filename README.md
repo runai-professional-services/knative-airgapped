@@ -4,28 +4,26 @@ This guide describes how to install Knative Serving with Kourier ingress in an a
 
 ## Prerequisites
 
-- An internet-connected machine for downloading images and charts
+- A connected host with internet access for downloading images and charts
 - Access to a private container registry in your air-gapped environment
-- `podman` CLI
+- `podman` or `docker` CLI
 - `helm` CLI (v3.14+)
 - `kubectl` CLI configured to access your air-gapped cluster
 - Kubernetes cluster meeting [Run:ai system requirements](../system-requirements.md)
 
-## Supported Versions
-
-NVIDIA Run:ai supports Knative versions **1.11 to 1.18**. This guide uses version **1.18** as the reference.
+This guide uses version **1.18** as the reference.
 
 ## Files in this Directory
 
 | File | Description |
 |------|-------------|
-| `pull-images.sh` | Script to pull and save Knative images (run on internet-connected machine) |
+| `pull-images.sh` | Script to pull and save Knative images (run on connected host) |
 | `push-images.sh` | Script to load and push images to private registry (run in air-gapped environment) |
 | `knative-serving.yaml` | KnativeServing CR configured for private registry |
 
 ---
 
-## Step 1: Download Knative Helm Chart (Internet-Connected Machine)
+## Step 1: Download Knative Helm Chart (Connected Host)
 
 On a machine with internet access, download the Knative Operator Helm chart:
 
@@ -45,7 +43,7 @@ This will create `./knative-charts/knative-operator-${KNATIVE_VERSION}.tgz`.
 
 ---
 
-## Step 2: Pull and Save Images (Internet-Connected Machine)
+## Step 2: Pull and Save Images (Connected Host)
 
 Use the provided script to pull all required images and save them as tar archives:
 
@@ -53,6 +51,8 @@ Use the provided script to pull all required images and save them as tar archive
 chmod +x pull-images.sh
 ./pull-images.sh
 ```
+
+> **Note:** No login is required — all Knative images are publicly accessible.
 
 See [pull-images.sh](./pull-images.sh) for the list of images.
 
@@ -71,7 +71,16 @@ Transfer the following to your air-gapped environment:
 
 ## Step 4: Load and Push Images to Private Registry
 
-Edit `push-images.sh` to set your `PRIVATE_REGISTRY` URL, then run:
+Edit `push-images.sh` to set your `PRIVATE_REGISTRY` URL.
+
+> **Note:** The script assumes you are already logged in to your private registry. Log in before running:
+> ```bash
+> podman login <PRIVATE_REGISTRY>
+> # or
+> docker login <PRIVATE_REGISTRY>
+> ```
+
+Then run:
 
 ```bash
 chmod +x push-images.sh
@@ -215,17 +224,14 @@ kubectl get svc -n knative-serving kourier
 
 Knative Serving requires the following container images. Replace `${KNATIVE_VERSION}` with your target version (e.g., `1.18.0`):
 
-### Knative Operator Images
-
+Knative Operator Images
 > **Note:** The operator webhook (`operator/cmd/webhook`) is different from the serving webhook (`serving/cmd/webhook`). Push the operator webhook to a separate path like `knative/operator-webhook` to avoid conflicts.
-
 ```bash
 gcr.io/knative-releases/knative.dev/operator/cmd/operator:v${KNATIVE_VERSION}
 gcr.io/knative-releases/knative.dev/operator/cmd/webhook:v${KNATIVE_VERSION}
 ```
 
-### Knative Serving Core Images
-
+Knative Serving Core Images
 ```bash
 gcr.io/knative-releases/knative.dev/serving/cmd/activator:v${KNATIVE_VERSION}
 gcr.io/knative-releases/knative.dev/serving/cmd/autoscaler:v${KNATIVE_VERSION}
@@ -234,22 +240,19 @@ gcr.io/knative-releases/knative.dev/serving/cmd/webhook:v${KNATIVE_VERSION}
 gcr.io/knative-releases/knative.dev/serving/cmd/queue:v${KNATIVE_VERSION}
 ```
 
-### Kourier Ingress Images
-
+Kourier Ingress Images
 ```bash
 gcr.io/knative-releases/knative.dev/net-kourier/cmd/kourier:v${KNATIVE_VERSION}
 docker.io/envoyproxy/envoy:v1.34-latest
 ```
 
-### Post-Install Job Images
-
+Post-Install Job Images
 ```bash
 gcr.io/knative-releases/knative.dev/pkg/apiextensions/storageversion/cmd/migrate:latest
 gcr.io/knative-releases/knative.dev/serving/pkg/cleanup/cmd/cleanup:latest
 ```
 
-### Optional: HPA Autoscaler Images (for custom metrics)
-
+HPA Autoscaler Images (for custom metrics)
 ```bash
 gcr.io/knative-releases/knative.dev/serving/cmd/autoscaler-hpa:v${KNATIVE_VERSION}
 ```
