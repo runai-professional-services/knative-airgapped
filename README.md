@@ -1,273 +1,169 @@
-# Installing Knative Serving in Air-Gapped Environments
+# Knative Operator Air-Gapped Installation
 
-This guide describes how to install Knative Serving with Kourier ingress in an air-gapped environment for use with NVIDIA Run:ai inference workloads.
-This guide uses version **1.18** as the reference.
+Automated installation of **Knative Operator** for air-gapped environments. The Knative Operator manages the lifecycle of Knative Serving (with Kourier ingress) on your cluster.
 
-## Table of Contents
+This toolkit is designed for use with NVIDIA Run:ai inference workloads, but can be used for any air-gapped Knative Operator deployment.
 
-- [Prerequisites](#prerequisites)
-- [Step 1: Download Knative Helm Chart (Connected Host)](#step-1-download-knative-helm-chart-connected-host)
-- [Step 2: Pull and Save Images (Connected Host)](#step-2-pull-and-save-images-connected-host)
-- [Step 3: Transfer Artifacts to Air-Gapped Environment](#step-3-transfer-artifacts-to-air-gapped-environment)
-- [Step 4: Load and Push Images to Private Registry](#step-4-load-and-push-images-to-private-registry)
-- [Step 5: Install Knative Operator with Private Registry](#step-5-install-knative-operator-with-private-registry)
-- [Step 6: Create KnativeServing with Private Registry](#step-6-create-knativeserving-with-private-registry)
-- [Step 7: Verify Installation](#step-7-verify-installation)
-- [Notes](#notes)
-  - [Files in this Directory](#files-in-this-directory)
-  - [Image Reference](#image-reference)
+## Quick Start
+
+### 1. Prepare Bundle (Connected Host)
+
+On a host with internet access:
+
+```bash
+./prepare.sh
+```
+
+This will:
+- Download the Knative Operator Helm chart
+- Pull all required container images
+- Create a transferable archive: `knative-airgapped-1.18.0.tar.gz`
+
+### 2. Transfer
+
+Copy `knative-airgapped-1.18.0.tar.gz` to your air-gapped environment.
+
+### 3. Install (Air-Gapped Environment)
+
+```bash
+# Extract the bundle
+tar -xzf knative-airgapped-1.18.0.tar.gz
+cd knative-airgapped-1.18.0/
+
+# Log in to your private registry first
+docker login <your-registry>   # or: podman login <your-registry>
+
+# Run the installer
+./install.sh
+```
+
+The installer will prompt for:
+- Container tool (docker/podman) — auto-detected if only one is installed
+- Private registry URL
+- Registry credentials (for Kubernetes image pull secrets)
+
+For non-interactive installation, set environment variables:
+
+```bash
+export CONTAINER_CMD=docker
+export PRIVATE_REGISTRY_URL=registry.example.com
+export PRIVATE_REGISTRY_USERNAME=admin
+export PRIVATE_REGISTRY_PASSWORD=secret
+./install.sh
+```
+
+It will then automatically:
+1. Load and push images to your private registry
+2. Install Knative Operator via Helm
+3. Deploy KnativeServing CR
+4. Configure image pull secrets
+5. Verify the installation
 
 ## Prerequisites
 
-- A connected host with internet access for downloading images and charts
-- Access to a private container registry in your air-gapped environment
+### Connected Host
 - `podman` or `docker` CLI
 - `helm` CLI (v3.14+)
-- `kubectl` CLI configured to access your air-gapped cluster
-- Kubernetes cluster meeting knative operator system requirements: https://knative.dev/v1.18-docs/install/operator/knative-with-operators/
+- Internet access
 
----
+### Air-Gapped Environment
+- `podman` or `docker` CLI
+- `helm` CLI (v3.14+)
+- `kubectl` CLI configured to access your cluster
+- Access to a private container registry
+- Logged in to the private registry
 
-## Step 1: Download Knative Helm Chart (Connected Host)
+## Configuration
 
-On a machine with internet access, download the Knative Operator Helm chart:
+### Knative Operator Version
 
-```bash
-# Set the Knative version
-export KNATIVE_VERSION=1.18.0
-
-# Add the Knative Operator Helm repository
-helm repo add knative-operator https://knative.github.io/operator
-helm repo update
-
-# Download the chart to a local directory
-helm pull knative-operator/knative-operator --version ${KNATIVE_VERSION} --destination ./knative-charts/
-```
-
-This will create `./knative-charts/knative-operator-${KNATIVE_VERSION}.tgz`.
-
----
-
-## Step 2: Pull and Save Images (Connected Host)
-
-Use the provided script to pull all required images and save them as tar archives:
+Default version is **1.18.0**. To use a different version:
 
 ```bash
-chmod +x pull-images.sh
-./pull-images.sh
+export KNATIVE_VERSION=1.17.0
+./prepare.sh
 ```
 
-> **Note:** No login is required — all Knative images are publicly accessible.
+### Timeouts
 
-See [pull-images.sh](./pull-images.sh) for the list of images.
+The installer waits for resources to be ready. Default timeouts:
+- Operator: 300s
+- Serving: 300s
 
----
-
-## Step 3: Transfer Artifacts to Air-Gapped Environment
-
-Transfer the following to your air-gapped environment:
-
-1. `knative-charts/knative-operator-${KNATIVE_VERSION}.tgz` - Helm chart
-2. `knative-images/knative-images.tar` - Container images
-3. `push-images.sh` - Script to push images to private registry
-4. `knative-serving.yaml` - KnativeServing CR
-
----
-
-## Step 4: Load and Push Images to Private Registry
-
-Edit `push-images.sh` to set your `PRIVATE_REGISTRY` URL.
-
-> **Note:** The script assumes you are already logged in to your private registry. Log in before running:
-> ```bash
-> podman login <PRIVATE_REGISTRY>
-> # or
-> docker login <PRIVATE_REGISTRY>
-> ```
-
-Then run:
+Override with environment variables:
 
 ```bash
-chmod +x push-images.sh
-./push-images.sh
+export OPERATOR_TIMEOUT=600s
+export SERVING_TIMEOUT=600s
+./install.sh
 ```
 
-See [push-images.sh](./push-images.sh) for details.
+## What's Included
 
----
+### Container Images
 
-## Step 5: Install Knative Operator with Private Registry
+| Component | Images |
+|-----------|--------|
+| Knative Operator | `operator`, `operator-webhook` |
+| Knative Serving | `activator`, `autoscaler`, `controller`, `webhook`, `queue` |
+| Kourier Ingress | `kourier`, `envoy` |
+| Post-install Jobs | `migrate`, `cleanup` |
+| Optional | `autoscaler-hpa` |
 
-Create the `knative-operator` namespace:
+### Bundle Contents
 
-```bash
-kubectl create ns knative-operator
+After running `prepare.sh`:
+
+```
+knative-airgapped-1.18.0.tar.gz
+└── knative-airgapped-1.18.0/
+    ├── install.sh                      # Installation script
+    ├── knative-operator-1.18.0.tgz     # Helm chart
+    ├── knative-images.tar              # Container images
+    ├── knative-serving.yaml.tpl        # KnativeServing template
+    ├── VERSION                         # Knative Operator version
+    └── ENVOY_VERSION                   # Envoy version
 ```
 
-Create the image pull secret for the private registry:
+## Troubleshooting
 
-```bash
-kubectl create secret docker-registry knative-registry-creds \
-    --namespace knative-operator \
-    --docker-server=<PRIVATE_REGISTRY> \
-    --docker-username=<your-username> \
-    --docker-password=<your-password>
-```
-
-Install the Knative Operator using the downloaded Helm chart and override the image registry:
-
-```bash
-# Set your private registry
-export PRIVATE_REGISTRY="your-private-registry.example.com"
-
-# Set version
-export KNATIVE_VERSION="1.18.0"
-
-# Install Knative Operator
-helm install knative-operator ./knative-charts/knative-operator-${KNATIVE_VERSION}.tgz \
-    --namespace knative-operator \
-    --set knative_operator.knative_operator.image=${PRIVATE_REGISTRY}/knative/operator \
-    --set knative_operator.knative_operator.tag=v${KNATIVE_VERSION} \
-    --set knative_operator.operator_webhook.image=${PRIVATE_REGISTRY}/knative/operator-webhook \
-    --set knative_operator.operator_webhook.tag=v${KNATIVE_VERSION}
-```
-
-Immediately after installation, patch the ServiceAccounts to include the image pull secret:
-
-```bash
-for sa in default knative-operator operator-webhook; do
-    kubectl patch serviceaccount ${sa} -n knative-operator \
-        -p '{"imagePullSecrets": [{"name": "knative-registry-creds"}]}'
-done
-```
-
-Restart deployments:
-
-```bash
-kubectl -n knative-operator rollout restart deploy
-```
-
-Verify the operator is running:
+### Check Operator Status
 
 ```bash
 kubectl get pods -n knative-operator
+kubectl logs -n knative-operator -l app.kubernetes.io/name=knative-operator
 ```
 
----
-
-## Step 6: Create KnativeServing with Private Registry
-
-Create the `knative-serving` namespace:
-
-```bash
-kubectl create ns knative-serving
-```
-
-Create the image pull secret for the private registry:
-
-```bash
-kubectl create secret docker-registry knative-registry-creds \
-    --namespace knative-serving \
-    --docker-server=<PRIVATE_REGISTRY> \
-    --docker-username=<your-username> \
-    --docker-password=<your-password>
-```
-
-Edit `knative-serving.yaml` to replace `<PRIVATE_REGISTRY>` with your private registry URL, then apply:
-
-```bash
-kubectl apply -f knative-serving.yaml
-```
-
-Patch the ServiceAccounts to use the image pull secret (the CR setting doesn't propagate to pods):
-
-```bash
-for sa in activator controller default net-kourier; do
-    kubectl patch serviceaccount ${sa} -n knative-serving \
-        -p '{"imagePullSecrets": [{"name": "knative-registry-creds"}]}'
-done
-```
-
-Restart the deployments to pick up the changes:
-
-```bash
-kubectl rollout restart deployment -n knative-serving
-```
-
----
-
-## Step 7: Verify Installation
-
-Check that all Knative Serving pods are running:
+### Check Serving Status
 
 ```bash
 kubectl get pods -n knative-serving
+kubectl get knativeserving -n knative-serving -o yaml
 ```
 
-Expected output (all pods should be `Running`):
+### Image Pull Errors
 
-```
-NAME                                      READY   STATUS    RESTARTS   AGE
-activator-xxxxxxxxxx-xxxxx                1/1     Running   0          2m
-autoscaler-xxxxxxxxxx-xxxxx               1/1     Running   0          2m
-controller-xxxxxxxxxx-xxxxx               1/1     Running   0          2m
-net-kourier-controller-xxxxxxxxxx-xxxxx   1/1     Running   0          2m
-webhook-xxxxxxxxxx-xxxxx                  1/1     Running   0          2m
-3scale-kourier-gateway-xxxxxxxxxx-xxxxx   1/1     Running   0          2m
-```
+If pods fail with `ImagePullBackOff`:
 
-Verify Kourier service:
+1. Verify images are in your private registry
+2. Check image pull secrets exist:
+   ```bash
+   kubectl get secrets -n knative-serving knative-registry-creds
+   ```
+3. Verify ServiceAccounts have the secret:
+   ```bash
+   kubectl get sa -n knative-serving -o yaml | grep imagePullSecrets
+   ```
+
+### Re-run Installation
+
+The installer is idempotent - safe to run multiple times:
 
 ```bash
-kubectl get svc -n knative-serving kourier
+./install.sh
 ```
 
----
+## References
 
-## Notes
-
-### Files in this Directory
-
-| File | Description |
-|------|-------------|
-| `pull-images.sh` | Script to pull and save Knative images (run on connected host) |
-| `push-images.sh` | Script to load and push images to private registry (run in air-gapped environment) |
-| `knative-serving.yaml` | KnativeServing CR configured for private registry |
-
-### Image Reference
-
-Knative Serving requires the following container images. Replace `${KNATIVE_VERSION}` with your target version (e.g., `1.18.0`):
-
-Knative Operator Images
-> **Note:** The operator webhook (`operator/cmd/webhook`) is different from the serving webhook (`serving/cmd/webhook`). Push the operator webhook to a separate path like `knative/operator-webhook` to avoid conflicts.
-```bash
-gcr.io/knative-releases/knative.dev/operator/cmd/operator:v${KNATIVE_VERSION}
-gcr.io/knative-releases/knative.dev/operator/cmd/webhook:v${KNATIVE_VERSION}
-```
-
-Knative Serving Core Images
-```bash
-gcr.io/knative-releases/knative.dev/serving/cmd/activator:v${KNATIVE_VERSION}
-gcr.io/knative-releases/knative.dev/serving/cmd/autoscaler:v${KNATIVE_VERSION}
-gcr.io/knative-releases/knative.dev/serving/cmd/controller:v${KNATIVE_VERSION}
-gcr.io/knative-releases/knative.dev/serving/cmd/webhook:v${KNATIVE_VERSION}
-gcr.io/knative-releases/knative.dev/serving/cmd/queue:v${KNATIVE_VERSION}
-```
-
-Kourier Ingress Images
-```bash
-gcr.io/knative-releases/knative.dev/net-kourier/cmd/kourier:v${KNATIVE_VERSION}
-docker.io/envoyproxy/envoy:v1.34-latest
-```
-
-Post-Install Job Images
-```bash
-gcr.io/knative-releases/knative.dev/pkg/apiextensions/storageversion/cmd/migrate:latest
-gcr.io/knative-releases/knative.dev/serving/pkg/cleanup/cmd/cleanup:latest
-```
-
-HPA Autoscaler Images (for custom metrics)
-```bash
-gcr.io/knative-releases/knative.dev/serving/cmd/autoscaler-hpa:v${KNATIVE_VERSION}
-```
-
+- [Knative Operator Documentation](https://knative.dev/docs/install/operator/knative-with-operators/)
+- [NVIDIA Run:ai System Requirements](https://docs.run.ai/latest/admin/runai-setup/cluster-setup/cluster-prerequisites/)
