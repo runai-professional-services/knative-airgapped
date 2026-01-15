@@ -145,18 +145,76 @@ fi
 # =============================================================================
 print_step "Deleting Knative namespaces..."
 
+force_delete_namespace() {
+    local ns=$1
+    local timeout=30
+    
+    echo "    Attempting to delete namespace ${ns}..."
+    
+    # Start deletion in background
+    kubectl delete namespace "${ns}" --timeout=${timeout}s &
+    local delete_pid=$!
+    
+    # Wait for deletion with timeout
+    local elapsed=0
+    while kill -0 $delete_pid 2>/dev/null; do
+        sleep 2
+        elapsed=$((elapsed + 2))
+        
+        if [[ $elapsed -ge $timeout ]]; then
+            echo "    ⚠️  Namespace ${ns} stuck after ${timeout}s, forcing cleanup..."
+            
+            # Kill the background delete
+            kill $delete_pid 2>/dev/null || true
+            wait $delete_pid 2>/dev/null || true
+            
+            # Find and remove finalizers from ALL resource types in the namespace
+            echo "    Removing finalizers from stuck resources..."
+            
+            # Get all API resources and remove finalizers
+            for resource_type in $(kubectl api-resources --verbs=list --namespaced -o name 2>/dev/null); do
+                kubectl get "${resource_type}" -n "${ns}" -o name 2>/dev/null | while read resource; do
+                    kubectl patch "${resource}" -n "${ns}" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+                done
+            done
+            
+            # Also patch CRDs that might be stuck (knativeserving, knativeeventing, etc.)
+            for crd in knativeserving knativeeventing; do
+                kubectl get "${crd}" -n "${ns}" -o name 2>/dev/null | while read resource; do
+                    kubectl patch "${resource}" -n "${ns}" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
+                    kubectl delete "${resource}" -n "${ns}" --force --grace-period=0 2>/dev/null || true
+                done
+            done
+            
+            # Force finalize the namespace itself
+            echo "    Finalizing namespace ${ns}..."
+            kubectl get namespace "${ns}" -o json 2>/dev/null | \
+                jq '.spec.finalizers = []' | \
+                kubectl replace --raw "/api/v1/namespaces/${ns}/finalize" -f - 2>/dev/null || true
+            
+            # Try delete again
+            kubectl delete namespace "${ns}" --force --grace-period=0 2>/dev/null || true
+            
+            # Final check
+            sleep 3
+            if kubectl get namespace "${ns}" &>/dev/null; then
+                echo "    ⚠️  Namespace ${ns} may still be terminating. Manual cleanup may be needed."
+            else
+                echo "    ✅ Namespace ${ns} deleted successfully"
+            fi
+            return
+        fi
+    done
+    
+    wait $delete_pid 2>/dev/null
+    echo "    ✅ Namespace ${ns} deleted successfully"
+}
+
 for ns in knative-operator knative-serving knative-eventing kourier-system; do
     if kubectl get namespace "${ns}" &>/dev/null; then
-        print_substep "Deleting namespace ${ns}..."
-        
-        # Remove finalizers from stuck resources
-        kubectl get all -n "${ns}" -o name 2>/dev/null | while read resource; do
-            kubectl patch "${resource}" -n "${ns}" -p '{"metadata":{"finalizers":null}}' --type=merge 2>/dev/null || true
-        done
-        
-        # Delete namespace
-        kubectl delete namespace "${ns}" --timeout=120s 2>/dev/null || true
-        echo "      Namespace ${ns} deleted"
+        force_delete_namespace "${ns}"
+    else
+        echo "    Namespace ${ns} does not exist (skipping)"
     fi
 done
 
