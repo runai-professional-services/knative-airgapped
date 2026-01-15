@@ -19,7 +19,9 @@ set -e
 # =============================================================================
 
 KNATIVE_VERSION="${KNATIVE_VERSION:-1.18.0}"
-ENVOY_VERSION="${ENVOY_VERSION:-v1.34-latest}"
+# Use a stable Envoy version - v1.34-latest may be distroless or incompatible
+# Kourier expects the envoy binary at /usr/local/bin/envoy
+ENVOY_VERSION="${ENVOY_VERSION:-v1.31.2}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # =============================================================================

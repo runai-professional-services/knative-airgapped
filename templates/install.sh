@@ -26,7 +26,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KNATIVE_VERSION=$(cat "${SCRIPT_DIR}/VERSION" 2>/dev/null || echo "1.18.0")
-ENVOY_VERSION=$(cat "${SCRIPT_DIR}/ENVOY_VERSION" 2>/dev/null || echo "v1.34-latest")
+ENVOY_VERSION=$(cat "${SCRIPT_DIR}/ENVOY_VERSION" 2>/dev/null || echo "v1.31.2")
 
 # Timeouts
 OPERATOR_TIMEOUT="${OPERATOR_TIMEOUT:-300s}"
