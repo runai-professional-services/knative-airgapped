@@ -404,8 +404,8 @@ sleep 5
 print_substep "Patching ServiceAccounts with imagePullSecrets..."
 patch_service_accounts "knative-operator" "default" "knative-operator" "operator-webhook"
 
-print_substep "Restarting deployments to pick up imagePullSecrets..."
-kubectl rollout restart deployment -n knative-operator
+print_substep "Deleting pods to pick up imagePullSecrets..."
+kubectl delete pods -n knative-operator --all --force --grace-period=0 2>/dev/null || true
 
 print_substep "Waiting for Operator to be ready..."
 wait_for_all_deployments "knative-operator" "${OPERATOR_TIMEOUT}"
@@ -448,8 +448,8 @@ done
 
 patch_service_accounts "knative-serving" "activator" "controller" "default" "net-kourier"
 
-print_substep "Restarting deployments..."
-kubectl rollout restart deployment -n knative-serving 2>/dev/null || true
+print_substep "Deleting pods to pick up imagePullSecrets..."
+kubectl delete pods -n knative-serving --all --force --grace-period=0 2>/dev/null || true
 
 print_substep "Waiting for KnativeServing to be ready..."
 wait_for_knative_serving_ready 300
