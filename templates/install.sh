@@ -336,87 +336,22 @@ create_knative_serving_rbac() {
     
     echo "    Creating ClusterRoleBindings for knative-serving..."
     
-    # Bind knative-serving controller to cluster-admin for full access
-    # This is a workaround - in production, use more restrictive roles
-    cat <<EOF | kubectl apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: knative-serving-controller-admin
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-- kind: ServiceAccount
-  name: controller
-  namespace: knative-serving
-EOF
+    local service_accounts=("controller" "activator" "autoscaler" "webhook" "net-kourier")
     
-    # Bind activator
-    cat <<EOF | kubectl apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: knative-serving-activator-admin
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-- kind: ServiceAccount
-  name: activator
-  namespace: knative-serving
-EOF
-
-    # Bind autoscaler
-    cat <<EOF | kubectl apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: knative-serving-autoscaler-admin
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-- kind: ServiceAccount
-  name: autoscaler
-  namespace: knative-serving
-EOF
-
-    # Bind webhook
-    cat <<EOF | kubectl apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: knative-serving-webhook-admin
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-- kind: ServiceAccount
-  name: webhook
-  namespace: knative-serving
-EOF
-
-    # Bind net-kourier-controller
-    cat <<EOF | kubectl apply -f -
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: knative-serving-net-kourier-admin
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: cluster-admin
-subjects:
-- kind: ServiceAccount
-  name: net-kourier
-  namespace: knative-serving
-EOF
-
+    for sa in "${service_accounts[@]}"; do
+        local binding_name="knative-serving-${sa}-admin"
+        
+        # Delete existing binding if it exists (roleRef cannot be changed)
+        kubectl delete clusterrolebinding "${binding_name}" --ignore-not-found=true 2>/dev/null
+        
+        # Create new binding
+        kubectl create clusterrolebinding "${binding_name}" \
+            --clusterrole=cluster-admin \
+            --serviceaccount="knative-serving:${sa}" 2>/dev/null || true
+        
+        echo "      Created ClusterRoleBinding: ${binding_name}"
+    done
+    
     echo "    ClusterRoleBindings created"
 }
 
