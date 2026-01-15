@@ -323,8 +323,14 @@ if [[ ! -f "${SCRIPT_DIR}/knative-images.tar" ]]; then
     exit 1
 fi
 
-if [[ ! -f "${SCRIPT_DIR}/knative-operator-v${KNATIVE_VERSION}.tgz" ]]; then
+HELM_CHART="${SCRIPT_DIR}/knative-operator-v${KNATIVE_VERSION}.tgz"
+if [[ ! -f "${HELM_CHART}" ]]; then
     print_error "knative-operator-v${KNATIVE_VERSION}.tgz not found."
+    echo "DEBUG: Looking for: ${HELM_CHART}"
+    echo "DEBUG: SCRIPT_DIR=${SCRIPT_DIR}"
+    echo "DEBUG: KNATIVE_VERSION=${KNATIVE_VERSION}"
+    echo "DEBUG: Files in directory:"
+    ls -la "${SCRIPT_DIR}"/*.tgz 2>/dev/null || echo "  No .tgz files found"
     exit 1
 fi
 
