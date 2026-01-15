@@ -352,17 +352,16 @@ EOF
     fi
 }
 
-patch_service_accounts() {
+patch_all_service_accounts() {
     local namespace=$1
-    shift
-    local service_accounts=("$@")
     
-    for sa in "${service_accounts[@]}"; do
-        if kubectl get serviceaccount "${sa}" -n "${namespace}" &>/dev/null; then
-            kubectl patch serviceaccount "${sa}" -n "${namespace}" \
-                -p '{"imagePullSecrets": [{"name": "knative-registry-creds"}]}' 2>/dev/null || true
-            echo "    Patched ServiceAccount: ${sa}"
-        fi
+    echo "    Patching all ServiceAccounts in ${namespace}..."
+    
+    # Get all service accounts in the namespace and patch each one
+    for sa in $(kubectl get serviceaccount -n "${namespace}" -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+        kubectl patch serviceaccount "${sa}" -n "${namespace}" \
+            -p '{"imagePullSecrets": [{"name": "knative-registry-creds"}]}' 2>/dev/null || true
+        echo "      Patched: ${sa}"
     done
 }
 
@@ -488,7 +487,7 @@ print_substep "Waiting for ServiceAccounts to be created..."
 sleep 5
 
 print_substep "Patching ServiceAccounts with imagePullSecrets..."
-patch_service_accounts "knative-operator" "default" "knative-operator" "operator-webhook"
+patch_all_service_accounts "knative-operator"
 
 print_substep "Deleting pods to pick up imagePullSecrets..."
 kubectl delete pods -n knative-operator --all --force --grace-period=0 2>/dev/null || true
@@ -541,7 +540,7 @@ for i in {1..6}; do
     sleep 5
 done
 
-patch_service_accounts "knative-serving" "activator" "controller" "default" "net-kourier" "autoscaler" "webhook"
+patch_all_service_accounts "knative-serving"
 
 # Note: RBAC is managed by Knative Operator - no custom RBAC needed
 
