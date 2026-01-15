@@ -389,20 +389,22 @@ print_substep "Creating namespace and secrets..."
 create_namespace_if_not_exists "knative-operator"
 create_image_pull_secret "knative-operator"
 
-print_substep "Installing Helm chart..."
+print_substep "Installing Helm chart (without --wait to allow SA patching first)..."
 helm upgrade --install knative-operator --debug \
     "${SCRIPT_DIR}/knative-operator-v${KNATIVE_VERSION}.tgz" \
     --namespace knative-operator \
     --set knative_operator.knative_operator.image="${PRIVATE_REGISTRY_URL}/knative/operator" \
     --set knative_operator.knative_operator.tag="v${KNATIVE_VERSION}" \
     --set knative_operator.operator_webhook.image="${PRIVATE_REGISTRY_URL}/knative/operator-webhook" \
-    --set knative_operator.operator_webhook.tag="v${KNATIVE_VERSION}" \
-    --wait
+    --set knative_operator.operator_webhook.tag="v${KNATIVE_VERSION}"
 
-print_substep "Patching ServiceAccounts..."
+print_substep "Waiting for ServiceAccounts to be created..."
+sleep 5
+
+print_substep "Patching ServiceAccounts with imagePullSecrets..."
 patch_service_accounts "knative-operator" "default" "knative-operator" "operator-webhook"
 
-print_substep "Restarting deployments..."
+print_substep "Restarting deployments to pick up imagePullSecrets..."
 kubectl rollout restart deployment -n knative-operator
 
 print_substep "Waiting for Operator to be ready..."
