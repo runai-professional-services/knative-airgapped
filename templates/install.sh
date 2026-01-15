@@ -309,8 +309,8 @@ if [[ ! -f "${SCRIPT_DIR}/knative-images.tar" ]]; then
     exit 1
 fi
 
-if [[ ! -f "${SCRIPT_DIR}/knative-operator-${KNATIVE_VERSION}.tgz" ]]; then
-    print_error "knative-operator-${KNATIVE_VERSION}.tgz not found."
+if [[ ! -f "${SCRIPT_DIR}/knative-operator-v${KNATIVE_VERSION}.tgz" ]]; then
+    print_error "knative-operator-v${KNATIVE_VERSION}.tgz not found."
     exit 1
 fi
 
@@ -377,7 +377,7 @@ create_image_pull_secret "knative-operator"
 
 print_substep "Installing Helm chart..."
 helm upgrade --install knative-operator \
-    "${SCRIPT_DIR}/knative-operator-${KNATIVE_VERSION}.tgz" \
+    "${SCRIPT_DIR}/knative-operator-v${KNATIVE_VERSION}.tgz" \
     --namespace knative-operator \
     --set knative_operator.knative_operator.image="${PRIVATE_REGISTRY_URL}/knative/operator" \
     --set knative_operator.knative_operator.tag="v${KNATIVE_VERSION}" \

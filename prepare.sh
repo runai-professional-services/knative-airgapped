@@ -117,7 +117,7 @@ helm pull knative-operator/knative-operator \
     --version "${KNATIVE_VERSION}" \
     --destination "${BUNDLE_DIR}/"
 
-echo "Helm chart downloaded: knative-operator-${KNATIVE_VERSION}.tgz"
+echo "Helm chart downloaded: knative-operator-v${KNATIVE_VERSION}.tgz"
 
 # -----------------------------------------------------------------------------
 # Step 2: Pull container images
@@ -192,7 +192,7 @@ echo "Archive: ${ARCHIVE_NAME}"
 echo ""
 echo "Contents:"
 echo "  - install.sh                           (installation script)"
-echo "  - knative-operator-${KNATIVE_VERSION}.tgz    (Helm chart)"
+echo "  - knative-operator-v${KNATIVE_VERSION}.tgz    (Helm chart)"
 echo "  - knative-images.tar                   (container images)"
 echo "  - knative-serving.yaml.tpl             (KnativeServing template)"
 echo "  - VERSION                              (version info)"
