@@ -139,16 +139,30 @@ validate_registry_login() {
         fi
     fi
     
+    # If not logged in, attempt auto-login with provided credentials
     if [[ "${logged_in}" != "true" ]]; then
-        print_error "Not logged in to ${PRIVATE_REGISTRY_URL}"
-        echo ""
-        echo "Please log in first:"
-        echo "  ${CONTAINER_CMD} login ${PRIVATE_REGISTRY_URL}"
-        echo ""
-        exit 1
+        if [[ -n "${PRIVATE_REGISTRY_USERNAME}" && -n "${PRIVATE_REGISTRY_PASSWORD}" ]]; then
+            echo "Not logged in. Attempting login with provided credentials..."
+            if echo "${PRIVATE_REGISTRY_PASSWORD}" | ${CONTAINER_CMD} login "${PRIVATE_REGISTRY_URL}" \
+                --username "${PRIVATE_REGISTRY_USERNAME}" --password-stdin; then
+                echo "Successfully logged in to ${PRIVATE_REGISTRY_URL}"
+                logged_in=true
+            else
+                print_error "Failed to login to ${PRIVATE_REGISTRY_URL} with provided credentials"
+                exit 1
+            fi
+        else
+            print_error "Not logged in to ${PRIVATE_REGISTRY_URL}"
+            echo ""
+            echo "Please either:"
+            echo "  1. Set PRIVATE_REGISTRY_USERNAME and PRIVATE_REGISTRY_PASSWORD environment variables, or"
+            echo "  2. Log in manually: ${CONTAINER_CMD} login ${PRIVATE_REGISTRY_URL}"
+            echo ""
+            exit 1
+        fi
+    else
+        echo "Registry login validated: ${PRIVATE_REGISTRY_URL}"
     fi
-    
-    echo "Registry login validated: ${PRIVATE_REGISTRY_URL}"
 }
 
 prompt_registry_credentials() {
@@ -317,8 +331,8 @@ fi
 # Collect configuration
 detect_container_runtime
 prompt_registry
-validate_registry_login
 prompt_registry_credentials
+validate_registry_login
 
 # =============================================================================
 # Step 1: Load and push images
