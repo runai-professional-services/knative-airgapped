@@ -507,6 +507,13 @@ create_knative_serving_rbac
 print_substep "Deleting pods to pick up updated ServiceAccounts..."
 kubectl delete pods -n knative-serving --all --force --grace-period=0 2>/dev/null || true
 
+# Fix for Knative v1.18.x bug: storage-version-migration job missing SYSTEM_NAMESPACE env var
+print_substep "Fixing storage-version-migration job (upstream bug workaround)..."
+for job in $(kubectl get job -n knative-serving -l app=storage-version-migration-serving -o name 2>/dev/null); do
+    echo "    Deleting buggy job: ${job}"
+    kubectl delete ${job} -n knative-serving --ignore-not-found=true 2>/dev/null || true
+done
+
 print_substep "Waiting for KnativeServing to be ready..."
 wait_for_knative_serving_ready 300
 
