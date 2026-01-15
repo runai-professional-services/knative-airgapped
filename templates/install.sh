@@ -240,6 +240,39 @@ wait_for_all_deployments() {
     done
 }
 
+fix_storage_version_migration_job() {
+    # Fix for Knative v1.18.x bug: storage-version-migration job missing SYSTEM_NAMESPACE env var
+    # Instead of deleting, we patch the job to add the missing env var
+    
+    local job_name
+    job_name=$(kubectl get job -n knative-serving -l app=storage-version-migration-serving -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+    
+    if [[ -z "${job_name}" ]]; then
+        return 0  # No job found, nothing to fix
+    fi
+    
+    # Check if job already has the env var (already patched)
+    local has_env
+    has_env=$(kubectl get job "${job_name}" -n knative-serving -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="SYSTEM_NAMESPACE")].name}' 2>/dev/null || echo "")
+    
+    if [[ -n "${has_env}" ]]; then
+        return 0  # Already patched
+    fi
+    
+    echo "    Fixing storage-version-migration job (adding missing SYSTEM_NAMESPACE env)..."
+    
+    # Get the job, add the env var, delete and recreate
+    kubectl get job "${job_name}" -n knative-serving -o json | \
+        jq '.spec.template.spec.containers[0].env = [{"name": "SYSTEM_NAMESPACE", "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace"}}}]' | \
+        jq 'del(.metadata.resourceVersion, .metadata.uid, .metadata.creationTimestamp, .status)' > /tmp/fixed-job.json
+    
+    kubectl delete job "${job_name}" -n knative-serving --ignore-not-found=true 2>/dev/null || true
+    kubectl apply -f /tmp/fixed-job.json 2>/dev/null || true
+    rm -f /tmp/fixed-job.json
+    
+    echo "    Storage-version-migration job patched successfully"
+}
+
 wait_for_knative_serving_ready() {
     local timeout_seconds=${1:-300}
     local elapsed=0
@@ -248,6 +281,9 @@ wait_for_knative_serving_ready() {
     echo "    Waiting for KnativeServing to be ready..."
     
     while [[ ${elapsed} -lt ${timeout_seconds} ]]; do
+        # Try to fix the buggy storage-version-migration job each iteration
+        fix_storage_version_migration_job
+        
         local status
         status=$(kubectl get knativeserving knative-serving -n knative-serving \
             -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "Unknown")
@@ -527,13 +563,6 @@ create_knative_serving_rbac
 
 print_substep "Deleting pods to pick up updated ServiceAccounts..."
 kubectl delete pods -n knative-serving --all --force --grace-period=0 2>/dev/null || true
-
-# Fix for Knative v1.18.x bug: storage-version-migration job missing SYSTEM_NAMESPACE env var
-print_substep "Fixing storage-version-migration job (upstream bug workaround)..."
-for job in $(kubectl get job -n knative-serving -l app=storage-version-migration-serving -o name 2>/dev/null); do
-    echo "    Deleting buggy job: ${job}"
-    kubectl delete ${job} -n knative-serving --ignore-not-found=true 2>/dev/null || true
-done
 
 print_substep "Waiting for KnativeServing to be ready..."
 wait_for_knative_serving_ready 300
