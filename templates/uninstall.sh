@@ -225,7 +225,10 @@ print_step "Deleting Knative ClusterRoleBindings..."
 
 delete_by_pattern "clusterrolebinding" "knative"
 delete_by_pattern "clusterrolebinding" "kourier"
-delete_by_pattern "clusterrolebinding" "airgapped-knative"
+
+# Clean up any legacy airgapped RBAC from older script versions
+delete_by_pattern "clusterrolebinding" "airgapped"
+delete_by_pattern "clusterrole" "airgapped"
 
 # =============================================================================
 # Step 5: Delete ClusterRoles

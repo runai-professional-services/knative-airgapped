@@ -366,32 +366,6 @@ patch_service_accounts() {
     done
 }
 
-create_knative_serving_rbac() {
-    # Create ClusterRoleBindings for knative-serving service accounts
-    # These are needed because the Knative Operator may not create them in air-gapped environments
-    # We use a unique prefix "airgapped-" to avoid conflicts with operator-managed bindings
-    
-    echo "    Creating ClusterRoleBindings for knative-serving..."
-    
-    local service_accounts=("controller" "activator" "autoscaler" "webhook" "net-kourier")
-    
-    for sa in "${service_accounts[@]}"; do
-        # Use "airgapped-" prefix to avoid conflicts with operator-managed bindings
-        local binding_name="airgapped-knative-${sa}"
-        
-        # Delete existing binding if it exists (roleRef cannot be changed)
-        kubectl delete clusterrolebinding "${binding_name}" --ignore-not-found=true 2>/dev/null
-        
-        # Create new binding
-        kubectl create clusterrolebinding "${binding_name}" \
-            --clusterrole=cluster-admin \
-            --serviceaccount="knative-serving:${sa}" 2>/dev/null || true
-        
-        echo "      Created ClusterRoleBinding: ${binding_name}"
-    done
-    
-    echo "    ClusterRoleBindings created"
-}
 
 # =============================================================================
 # MAIN
@@ -501,8 +475,8 @@ print_substep "Creating namespace and secrets..."
 create_namespace_if_not_exists "knative-operator"
 create_image_pull_secret "knative-operator"
 
-print_substep "Installing Helm chart (without --wait to allow SA patching first)..."
-helm upgrade --install knative-operator --debug \
+print_substep "Installing Helm chart..."
+helm upgrade --install knative-operator \
     "${SCRIPT_DIR}/knative-operator-v${KNATIVE_VERSION}.tgz" \
     --namespace knative-operator \
     --set knative_operator.knative_operator.image="${PRIVATE_REGISTRY_URL}/knative/operator" \
@@ -569,10 +543,9 @@ done
 
 patch_service_accounts "knative-serving" "activator" "controller" "default" "net-kourier" "autoscaler" "webhook"
 
-# Note: Custom RBAC creation removed - Knative Operator creates all needed RBAC
-# If you see RBAC errors, ensure you've run uninstall.sh first to clean up stale resources
+# Note: RBAC is managed by Knative Operator - no custom RBAC needed
 
-print_substep "Deleting pods to pick up updated ServiceAccounts..."
+print_substep "Restarting pods to pick up updated ServiceAccounts..."
 kubectl delete pods -n knative-serving --all --force --grace-period=0 2>/dev/null || true
 
 print_substep "Waiting for KnativeServing to be ready..."
