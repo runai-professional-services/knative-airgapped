@@ -522,6 +522,15 @@ kubectl delete pods -n knative-operator --all --force --grace-period=0 2>/dev/nu
 print_substep "Waiting for Operator to be ready..."
 wait_for_all_deployments "knative-operator" "${OPERATOR_TIMEOUT}"
 
+# Sometimes operator-webhook needs an extra restart after SA patching
+print_substep "Ensuring operator-webhook is healthy..."
+sleep 5
+if ! kubectl get pods -n knative-operator -l app.kubernetes.io/component=operator-webhook -o jsonpath='{.items[0].status.containerStatuses[0].ready}' 2>/dev/null | grep -q "true"; then
+    echo "    Restarting operator-webhook pod..."
+    kubectl delete pod -n knative-operator -l app.kubernetes.io/component=operator-webhook --force --grace-period=0 2>/dev/null || true
+    sleep 10
+fi
+
 echo "Knative Operator installed successfully!"
 
 # =============================================================================
