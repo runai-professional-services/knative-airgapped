@@ -390,7 +390,7 @@ create_namespace_if_not_exists "knative-operator"
 create_image_pull_secret "knative-operator"
 
 print_substep "Installing Helm chart..."
-helm upgrade --install knative-operator \
+helm upgrade --install knative-operator --debug \
     "${SCRIPT_DIR}/knative-operator-v${KNATIVE_VERSION}.tgz" \
     --namespace knative-operator \
     --set knative_operator.knative_operator.image="${PRIVATE_REGISTRY_URL}/knative/operator" \
