@@ -560,8 +560,8 @@ done
 
 patch_service_accounts "knative-serving" "activator" "controller" "default" "net-kourier" "autoscaler" "webhook"
 
-print_substep "Creating ClusterRoleBindings for knative-serving..."
-create_knative_serving_rbac
+# Note: Custom RBAC creation removed - Knative Operator creates all needed RBAC
+# If you see RBAC errors, ensure you've run uninstall.sh first to clean up stale resources
 
 print_substep "Deleting pods to pick up updated ServiceAccounts..."
 kubectl delete pods -n knative-serving --all --force --grace-period=0 2>/dev/null || true
