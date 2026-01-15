@@ -308,6 +308,96 @@ patch_service_accounts() {
     done
 }
 
+create_knative_serving_rbac() {
+    # Create ClusterRoleBindings for knative-serving service accounts
+    # These are needed because the Knative Operator may not create them in air-gapped environments
+    
+    echo "    Creating ClusterRoleBindings for knative-serving..."
+    
+    # Bind knative-serving controller to cluster-admin for full access
+    # This is a workaround - in production, use more restrictive roles
+    cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: knative-serving-controller-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: controller
+  namespace: knative-serving
+EOF
+    
+    # Bind activator
+    cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: knative-serving-activator-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: activator
+  namespace: knative-serving
+EOF
+
+    # Bind autoscaler
+    cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: knative-serving-autoscaler-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: autoscaler
+  namespace: knative-serving
+EOF
+
+    # Bind webhook
+    cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: knative-serving-webhook-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: webhook
+  namespace: knative-serving
+EOF
+
+    # Bind net-kourier-controller
+    cat <<EOF | kubectl apply -f -
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: knative-serving-net-kourier-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+- kind: ServiceAccount
+  name: net-kourier
+  namespace: knative-serving
+EOF
+
+    echo "    ClusterRoleBindings created"
+}
+
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -452,9 +542,12 @@ for i in {1..6}; do
     sleep 5
 done
 
-patch_service_accounts "knative-serving" "activator" "controller" "default" "net-kourier"
+patch_service_accounts "knative-serving" "activator" "controller" "default" "net-kourier" "autoscaler" "webhook"
 
-print_substep "Deleting pods to pick up imagePullSecrets..."
+print_substep "Creating ClusterRoleBindings for knative-serving..."
+create_knative_serving_rbac
+
+print_substep "Deleting pods to pick up updated ServiceAccounts..."
 kubectl delete pods -n knative-serving --all --force --grace-period=0 2>/dev/null || true
 
 print_substep "Waiting for KnativeServing to be ready..."
