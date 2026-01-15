@@ -422,11 +422,12 @@ create_namespace_if_not_exists "knative-serving"
 create_image_pull_secret "knative-serving"
 
 print_substep "Generating KnativeServing manifest..."
-export PRIVATE_REGISTRY_URL
-export KNATIVE_VERSION
-export ENVOY_VERSION
-
-envsubst < "${SCRIPT_DIR}/knative-serving.yaml.tpl" > "${SCRIPT_DIR}/knative-serving.yaml"
+# Use sed instead of envsubst (not available on all systems)
+# Only substitute our variables, leave ${NAME} for Knative
+sed -e "s|\${PRIVATE_REGISTRY_URL}|${PRIVATE_REGISTRY_URL}|g" \
+    -e "s|\${KNATIVE_VERSION}|${KNATIVE_VERSION}|g" \
+    -e "s|\${ENVOY_VERSION}|${ENVOY_VERSION}|g" \
+    "${SCRIPT_DIR}/knative-serving.yaml.tpl" > "${SCRIPT_DIR}/knative-serving.yaml"
 
 print_substep "Applying KnativeServing CR..."
 kubectl apply -f "${SCRIPT_DIR}/knative-serving.yaml"
