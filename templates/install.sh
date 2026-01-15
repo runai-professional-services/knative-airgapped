@@ -369,13 +369,15 @@ patch_service_accounts() {
 create_knative_serving_rbac() {
     # Create ClusterRoleBindings for knative-serving service accounts
     # These are needed because the Knative Operator may not create them in air-gapped environments
+    # We use a unique prefix "airgapped-" to avoid conflicts with operator-managed bindings
     
     echo "    Creating ClusterRoleBindings for knative-serving..."
     
     local service_accounts=("controller" "activator" "autoscaler" "webhook" "net-kourier")
     
     for sa in "${service_accounts[@]}"; do
-        local binding_name="knative-serving-${sa}-admin"
+        # Use "airgapped-" prefix to avoid conflicts with operator-managed bindings
+        local binding_name="airgapped-knative-${sa}"
         
         # Delete existing binding if it exists (roleRef cannot be changed)
         kubectl delete clusterrolebinding "${binding_name}" --ignore-not-found=true 2>/dev/null
