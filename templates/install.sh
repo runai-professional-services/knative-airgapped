@@ -285,11 +285,33 @@ create_image_pull_secret() {
     if kubectl get secret "${secret_name}" -n "${namespace}" &>/dev/null; then
         echo "    Secret ${secret_name} already exists in ${namespace}"
     else
-        kubectl create secret docker-registry "${secret_name}" \
-            --namespace "${namespace}" \
-            --docker-server="${PRIVATE_REGISTRY_URL}" \
-            --docker-username="${PRIVATE_REGISTRY_USERNAME}" \
-            --docker-password="${PRIVATE_REGISTRY_PASSWORD}"
+        # Create docker config JSON and base64 encode it
+        local auth_string
+        auth_string=$(printf '%s:%s' "${PRIVATE_REGISTRY_USERNAME}" "${PRIVATE_REGISTRY_PASSWORD}" | base64 -w0 2>/dev/null || \
+                      printf '%s:%s' "${PRIVATE_REGISTRY_USERNAME}" "${PRIVATE_REGISTRY_PASSWORD}" | base64)
+        
+        local docker_config_json
+        docker_config_json=$(printf '{"auths":{"%s":{"username":"%s","password":"%s","auth":"%s"}}}' \
+            "${PRIVATE_REGISTRY_URL}" \
+            "${PRIVATE_REGISTRY_USERNAME}" \
+            "${PRIVATE_REGISTRY_PASSWORD}" \
+            "${auth_string}")
+        
+        local encoded_config
+        encoded_config=$(printf '%s' "${docker_config_json}" | base64 -w0 2>/dev/null || \
+                         printf '%s' "${docker_config_json}" | base64)
+        
+        # Use kubectl apply with YAML to avoid any shell escaping issues
+        cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${secret_name}
+  namespace: ${namespace}
+type: kubernetes.io/dockerconfigjson
+data:
+  .dockerconfigjson: ${encoded_config}
+EOF
         echo "    Secret ${secret_name} created in ${namespace}"
     fi
 }
