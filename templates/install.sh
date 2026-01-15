@@ -152,16 +152,16 @@ validate_registry_login() {
                 exit 1
             fi
         else
-            print_error "Not logged in to ${PRIVATE_REGISTRY_URL}"
-            echo ""
+        print_error "Not logged in to ${PRIVATE_REGISTRY_URL}"
+        echo ""
             echo "Please either:"
             echo "  1. Set PRIVATE_REGISTRY_USERNAME and PRIVATE_REGISTRY_PASSWORD environment variables, or"
             echo "  2. Log in manually: ${CONTAINER_CMD} login ${PRIVATE_REGISTRY_URL}"
-            echo ""
-            exit 1
-        fi
+        echo ""
+        exit 1
+    fi
     else
-        echo "Registry login validated: ${PRIVATE_REGISTRY_URL}"
+    echo "Registry login validated: ${PRIVATE_REGISTRY_URL}"
     fi
 }
 
@@ -392,9 +392,6 @@ validate_registry_login
 # =============================================================================
 print_step "Loading and pushing images to private registry..."
 
-print_substep "Loading images from tar archive..."
-${CONTAINER_CMD} load -i "${SCRIPT_DIR}/knative-images.tar"
-
 # Define image mappings
 IMAGE_MAPPINGS=(
     # Knative Operator
@@ -420,18 +417,42 @@ IMAGE_MAPPINGS=(
     "gcr.io/knative-releases/knative.dev/serving/pkg/cleanup/cmd/cleanup:v${KNATIVE_VERSION}|knative/cleanup:v${KNATIVE_VERSION}"
 )
 
-print_substep "Tagging and pushing images..."
+# Check if all images already exist in the registry
+print_substep "Checking if images already exist in registry..."
+images_missing=false
 for mapping in "${IMAGE_MAPPINGS[@]}"; do
-    src="${mapping%%|*}"
     target_path="${mapping##*|}"
     dst="${PRIVATE_REGISTRY_URL}/${target_path}"
     
-    echo "      ${src} -> ${dst}"
-    ${CONTAINER_CMD} tag "${src}" "${dst}"
-    ${CONTAINER_CMD} push "${dst}"
+    # Try to inspect the remote image
+    if ${CONTAINER_CMD} manifest inspect "${dst}" &>/dev/null; then
+        echo "      ✓ ${target_path}"
+    else
+        echo "      ✗ ${target_path} (missing)"
+        images_missing=true
+    fi
 done
 
-echo "All images pushed successfully!"
+if [[ "${images_missing}" == "false" ]]; then
+    echo ""
+    echo "    All images already exist in registry. Skipping load and push."
+else
+    print_substep "Loading images from tar archive..."
+    ${CONTAINER_CMD} load -i "${SCRIPT_DIR}/knative-images.tar"
+    
+    print_substep "Tagging and pushing images..."
+    for mapping in "${IMAGE_MAPPINGS[@]}"; do
+        src="${mapping%%|*}"
+        target_path="${mapping##*|}"
+        dst="${PRIVATE_REGISTRY_URL}/${target_path}"
+        
+        echo "      ${src} -> ${dst}"
+        ${CONTAINER_CMD} tag "${src}" "${dst}"
+        ${CONTAINER_CMD} push "${dst}"
+    done
+    
+    echo "All images pushed successfully!"
+fi
 
 # =============================================================================
 # Step 2: Install Knative Operator
