@@ -42,10 +42,10 @@ print_warning() {
     echo -e "${YELLOW}WARNING: $1${NC}"
 }
 
-# Detect container tool
+# Detect container tool (same logic as install.sh)
 detect_container_tool() {
-    if [[ -n "${CONTAINER_TOOL:-}" ]]; then
-        echo "$CONTAINER_TOOL"
+    if [[ -n "${CONTAINER_CMD:-}" ]]; then
+        echo "$CONTAINER_CMD"
     elif command -v podman &> /dev/null; then
         echo "podman"
     elif command -v docker &> /dev/null; then
@@ -56,21 +56,21 @@ detect_container_tool() {
     fi
 }
 
-CONTAINER_TOOL=$(detect_container_tool)
-echo "Using container tool: $CONTAINER_TOOL"
+CONTAINER_CMD=$(detect_container_tool)
+echo "Using container tool: $CONTAINER_CMD"
 
-# Get private registry from environment or prompt
+# Get private registry from environment or prompt (same var as install.sh)
 get_private_registry() {
-    if [[ -n "${PRIVATE_REGISTRY:-}" ]]; then
-        echo "$PRIVATE_REGISTRY"
+    if [[ -n "${PRIVATE_REGISTRY_URL:-}" ]]; then
+        echo "$PRIVATE_REGISTRY_URL"
     else
         read -p "Enter private registry URL (e.g., registry.example.com): " registry
         echo "$registry"
     fi
 }
 
-PRIVATE_REGISTRY=$(get_private_registry)
-echo "Target registry: $PRIVATE_REGISTRY"
+PRIVATE_REGISTRY_URL=$(get_private_registry)
+echo "Target registry: $PRIVATE_REGISTRY_URL"
 
 # Knative image repositories to clean
 KNATIVE_REPOS=(
@@ -109,13 +109,13 @@ clean_local_images() {
     local images
     
     # Find images matching pattern
-    images=$($CONTAINER_TOOL images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null | grep -i "$pattern" || true)
+    images=$($CONTAINER_CMD images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null | grep -i "$pattern" || true)
     
     if [[ -n "$images" ]]; then
         echo "$images" | while read -r image; do
             if [[ -n "$image" && "$image" != "<none>:<none>" ]]; then
                 print_substep "Removing: $image"
-                $CONTAINER_TOOL rmi -f "$image" 2>/dev/null || true
+                $CONTAINER_CMD rmi -f "$image" 2>/dev/null || true
             fi
         done
     fi
@@ -128,20 +128,20 @@ for pattern in "${KNATIVE_PATTERNS[@]}"; do
 done
 
 # Also clean images from the private registry that are cached locally
-print_substep "Cleaning cached images from $PRIVATE_REGISTRY"
-cached_images=$($CONTAINER_TOOL images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null | grep "$PRIVATE_REGISTRY" || true)
+print_substep "Cleaning cached images from $PRIVATE_REGISTRY_URL"
+cached_images=$($CONTAINER_CMD images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null | grep "$PRIVATE_REGISTRY_URL" || true)
 if [[ -n "$cached_images" ]]; then
     echo "$cached_images" | while read -r image; do
         if [[ -n "$image" && "$image" != "<none>:<none>" ]]; then
             print_substep "Removing cached: $image"
-            $CONTAINER_TOOL rmi -f "$image" 2>/dev/null || true
+            $CONTAINER_CMD rmi -f "$image" 2>/dev/null || true
         fi
     done
 fi
 
 # Clean dangling images
 print_substep "Cleaning dangling images..."
-$CONTAINER_TOOL image prune -f 2>/dev/null || true
+$CONTAINER_CMD image prune -f 2>/dev/null || true
 
 echo -e "${GREEN}Local image cleanup complete${NC}"
 
@@ -152,14 +152,14 @@ print_step "Cleaning remote registry images..."
 
 # Check if we're logged in
 check_registry_login() {
-    if $CONTAINER_TOOL login --get-login "$PRIVATE_REGISTRY" &>/dev/null; then
+    if $CONTAINER_CMD login --get-login "$PRIVATE_REGISTRY_URL" &>/dev/null; then
         return 0
     fi
     
     # Try to login if credentials are provided
     if [[ -n "${PRIVATE_REGISTRY_USERNAME:-}" && -n "${PRIVATE_REGISTRY_PASSWORD:-}" ]]; then
         print_substep "Logging in to registry..."
-        echo "$PRIVATE_REGISTRY_PASSWORD" | $CONTAINER_TOOL login "$PRIVATE_REGISTRY" \
+        echo "$PRIVATE_REGISTRY_PASSWORD" | $CONTAINER_CMD login "$PRIVATE_REGISTRY_URL" \
             -u "$PRIVATE_REGISTRY_USERNAME" --password-stdin 2>/dev/null
         return $?
     fi
@@ -172,7 +172,7 @@ check_registry_login() {
 delete_from_registry() {
     local repo=$1
     local tag=$2
-    local full_image="${PRIVATE_REGISTRY}/${repo}:${tag}"
+    local full_image="${PRIVATE_REGISTRY_URL}/${repo}:${tag}"
     
     print_substep "Deleting from registry: $full_image"
     
@@ -184,11 +184,11 @@ delete_from_registry() {
     # Method 2: Try using registry API directly
     # Get the manifest digest first
     local digest
-    digest=$($CONTAINER_TOOL manifest inspect "$full_image" 2>/dev/null | jq -r '.digest // empty' 2>/dev/null || true)
+    digest=$($CONTAINER_CMD manifest inspect "$full_image" 2>/dev/null | jq -r '.digest // empty' 2>/dev/null || true)
     
     if [[ -n "$digest" ]]; then
         # Construct the delete URL
-        local registry_url="https://${PRIVATE_REGISTRY}/v2/${repo}/manifests/${digest}"
+        local registry_url="https://${PRIVATE_REGISTRY_URL}/v2/${repo}/manifests/${digest}"
         
         # Get auth token if available
         local auth_header=""
@@ -201,7 +201,7 @@ delete_from_registry() {
     fi
     
     # Method 3: If this is OpenShift internal registry, use oc if available
-    if command -v oc &> /dev/null && [[ "$PRIVATE_REGISTRY" == *"openshift"* ]]; then
+    if command -v oc &> /dev/null && [[ "$PRIVATE_REGISTRY_URL" == *"openshift"* ]]; then
         # Extract namespace and image name
         local namespace=$(echo "$repo" | cut -d'/' -f1)
         local imagename=$(echo "$repo" | cut -d'/' -f2-)
@@ -212,7 +212,7 @@ delete_from_registry() {
 # Delete all tags from a repository
 delete_repo_tags() {
     local repo=$1
-    local full_repo="${PRIVATE_REGISTRY}/${repo}"
+    local full_repo="${PRIVATE_REGISTRY_URL}/${repo}"
     
     print_substep "Checking repository: $repo"
     
@@ -230,7 +230,7 @@ delete_repo_tags() {
         if [[ -n "${PRIVATE_REGISTRY_USERNAME:-}" && -n "${PRIVATE_REGISTRY_PASSWORD:-}" ]]; then
             auth_header="-u ${PRIVATE_REGISTRY_USERNAME}:${PRIVATE_REGISTRY_PASSWORD}"
         fi
-        tags=$(curl -s $auth_header "https://${PRIVATE_REGISTRY}/v2/${repo}/tags/list" 2>/dev/null | jq -r '.tags[]?' 2>/dev/null || true)
+        tags=$(curl -s $auth_header "https://${PRIVATE_REGISTRY_URL}/v2/${repo}/tags/list" 2>/dev/null | jq -r '.tags[]?' 2>/dev/null || true)
     fi
     
     if [[ -n "$tags" ]]; then
@@ -288,7 +288,7 @@ print_header "Cleanup Complete"
 
 echo "The following has been cleaned:"
 echo "  ✓ Local container images matching knative/kourier/envoy patterns"
-echo "  ✓ Cached images from $PRIVATE_REGISTRY"
+echo "  ✓ Cached images from $PRIVATE_REGISTRY_URL"
 echo "  ✓ Remote registry images (where accessible)"
 if command -v oc &> /dev/null; then
     echo "  ✓ OpenShift ImageStreams"
