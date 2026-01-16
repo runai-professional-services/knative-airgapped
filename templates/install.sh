@@ -10,15 +10,30 @@
 #   - kubectl CLI configured to access your cluster
 #   - Already logged in to your private registry
 #
-# Usage: ./install.sh
+# Usage: ./install.sh [--force]
+#
+# Options:
+#   --force    Force push images even if they already exist in registry
 #
 # Environment variables for non-interactive mode:
 #   CONTAINER_CMD              - Container tool (docker or podman)
 #   PRIVATE_REGISTRY_URL       - Private registry URL
 #   PRIVATE_REGISTRY_USERNAME  - Registry username for pull secrets
 #   PRIVATE_REGISTRY_PASSWORD  - Registry password for pull secrets
+#   FORCE_PUSH                 - Set to "true" to force push images
 
 set -e
+
+# Parse command line arguments
+FORCE_PUSH="${FORCE_PUSH:-false}"
+for arg in "$@"; do
+    case $arg in
+        --force)
+            FORCE_PUSH="true"
+            shift
+            ;;
+    esac
+done
 
 # =============================================================================
 # CONFIGURATION
@@ -374,6 +389,9 @@ print_header "Knative Air-Gapped Installation"
 
 echo "Knative Version: ${KNATIVE_VERSION}"
 echo "Envoy Version: ${ENVOY_VERSION}"
+if [[ "${FORCE_PUSH}" == "true" ]]; then
+    echo "Force Push: ENABLED"
+fi
 
 # Verify required files exist
 if [[ ! -f "${SCRIPT_DIR}/knative-images.tar" ]]; then
@@ -428,25 +446,33 @@ IMAGE_MAPPINGS=(
     "gcr.io/knative-releases/knative.dev/serving/pkg/cleanup/cmd/cleanup:v${KNATIVE_VERSION}|knative/cleanup:v${KNATIVE_VERSION}"
 )
 
-# Check if all images already exist in the registry
-print_substep "Checking if images already exist in registry..."
-images_missing=false
-for mapping in "${IMAGE_MAPPINGS[@]}"; do
-    target_path="${mapping##*|}"
-    dst="${PRIVATE_REGISTRY_URL}/${target_path}"
-    
-    # Try to inspect the remote image
-    if ${CONTAINER_CMD} manifest inspect "${dst}" &>/dev/null; then
-        echo "      ✓ ${target_path}"
-    else
-        echo "      ✗ ${target_path} (missing)"
-        images_missing=true
-    fi
-done
+# Check if we should skip the image existence check
+if [[ "${FORCE_PUSH}" == "true" ]]; then
+    echo ""
+    print_substep "Force push enabled - will push all images regardless of existence"
+    images_missing=true
+else
+    # Check if all images already exist in the registry
+    print_substep "Checking if images already exist in registry..."
+    images_missing=false
+    for mapping in "${IMAGE_MAPPINGS[@]}"; do
+        target_path="${mapping##*|}"
+        dst="${PRIVATE_REGISTRY_URL}/${target_path}"
+        
+        # Try to inspect the remote image
+        if ${CONTAINER_CMD} manifest inspect "${dst}" &>/dev/null; then
+            echo "      ✓ ${target_path}"
+        else
+            echo "      ✗ ${target_path} (missing)"
+            images_missing=true
+        fi
+    done
+fi
 
 if [[ "${images_missing}" == "false" ]]; then
     echo ""
     echo "    All images already exist in registry. Skipping load and push."
+    echo "    (Use --force to push anyway)"
 else
     print_substep "Loading images from tar archive..."
     ${CONTAINER_CMD} load -i "${SCRIPT_DIR}/knative-images.tar"
