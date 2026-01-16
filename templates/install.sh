@@ -490,6 +490,7 @@ print_substep "Patching ServiceAccounts with imagePullSecrets..."
 patch_all_service_accounts "knative-operator"
 
 print_substep "Deleting pods to pick up imagePullSecrets..."
+sleep 5
 kubectl delete pods -n knative-operator --all --force --grace-period=0 2>/dev/null || true
 
 print_substep "Waiting for Operator to be ready..."
@@ -545,6 +546,7 @@ patch_all_service_accounts "knative-serving"
 # Note: RBAC is managed by Knative Operator - no custom RBAC needed
 
 print_substep "Restarting pods to pick up updated ServiceAccounts..."
+sleep 5
 kubectl delete pods -n knative-serving --all --force --grace-period=0 2>/dev/null || true
 
 print_substep "Waiting for KnativeServing to be ready..."
