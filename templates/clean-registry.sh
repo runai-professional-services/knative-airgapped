@@ -257,28 +257,54 @@ echo "${GREEN}Remote registry cleanup complete${NC}"
 #######################################
 # Step 3: OpenShift-specific cleanup
 #######################################
-if command -v oc &> /dev/null; then
-    print_step "OpenShift-specific cleanup..."
-    
-    # Check if we can access the cluster
-    if oc whoami &>/dev/null; then
-        print_substep "Cleaning ImageStreams in 'knative' namespace..."
-        oc delete imagestream --all -n knative 2>/dev/null || true
-        
-        print_substep "Cleaning ImageStreams in 'envoyproxy' namespace..."
-        oc delete imagestream --all -n envoyproxy 2>/dev/null || true
-        
-        # Clean up image stream tags that might be in default namespace
-        print_substep "Cleaning any stray ImageStreamTags..."
-        for repo in "${KNATIVE_REPOS[@]}"; do
-            local name=$(basename "$repo")
-            oc delete imagestreamtag "${name}" --all-namespaces 2>/dev/null || true
-        done
-        
-        echo "${GREEN}OpenShift cleanup complete${NC}"
-    else
-        print_warning "Not logged into OpenShift cluster, skipping OCP-specific cleanup"
+print_step "OpenShift ImageStream cleanup..."
+
+# Try oc first, fall back to kubectl
+OC_CMD=""
+if command -v oc &> /dev/null && oc whoami &>/dev/null 2>&1; then
+    OC_CMD="oc"
+elif command -v kubectl &> /dev/null; then
+    # Check if this cluster has ImageStream CRD (OpenShift)
+    if kubectl api-resources 2>/dev/null | grep -q "imagestreams"; then
+        OC_CMD="kubectl"
     fi
+fi
+
+if [[ -n "$OC_CMD" ]]; then
+    print_substep "Using $OC_CMD for ImageStream cleanup..."
+    
+    # Delete ImageStreams in knative namespace
+    print_substep "Deleting ImageStreams in 'knative' namespace..."
+    $OC_CMD delete imagestream --all -n knative 2>/dev/null && echo "      Deleted all in knative" || echo "      No imagestreams in knative or namespace doesn't exist"
+    
+    # Delete ImageStreams in envoyproxy namespace
+    print_substep "Deleting ImageStreams in 'envoyproxy' namespace..."
+    $OC_CMD delete imagestream --all -n envoyproxy 2>/dev/null && echo "      Deleted all in envoyproxy" || echo "      No imagestreams in envoyproxy or namespace doesn't exist"
+    
+    # Also try to delete individual imagestreams by name in case they're in different namespaces
+    print_substep "Searching for knative-related ImageStreams in all namespaces..."
+    IMAGESTREAM_NAMES="activator autoscaler autoscaler-hpa controller webhook queue kourier migrate cleanup operator operator-webhook envoy"
+    
+    for isname in $IMAGESTREAM_NAMES; do
+        # Find and delete imagestreams with this name in any namespace
+        found_is=$($OC_CMD get imagestream "$isname" --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
+        if [[ -n "$found_is" ]]; then
+            echo "$found_is" | while read -r ns_is; do
+                ns="${ns_is%%/*}"
+                is="${ns_is##*/}"
+                echo "      Deleting imagestream $is in namespace $ns"
+                $OC_CMD delete imagestream "$is" -n "$ns" 2>/dev/null || true
+            done
+        fi
+    done
+    
+    echo "${GREEN}OpenShift ImageStream cleanup complete${NC}"
+else
+    print_warning "No oc/kubectl with ImageStream support found. Skipping OpenShift cleanup."
+    echo ""
+    echo "    If your registry is on OpenShift, manually delete ImageStreams:"
+    echo "      oc delete imagestream --all -n knative"
+    echo "      oc delete imagestream --all -n envoyproxy"
 fi
 
 #######################################
@@ -290,14 +316,12 @@ echo "The following has been cleaned:"
 echo "  ✓ Local container images matching knative/kourier/envoy patterns"
 echo "  ✓ Cached images from $PRIVATE_REGISTRY_URL"
 echo "  ✓ Remote registry images (where accessible)"
-if command -v oc &> /dev/null; then
-    echo "  ✓ OpenShift ImageStreams"
-fi
+echo "  ✓ OpenShift ImageStreams (if applicable)"
 
 echo ""
 echo "You can now run install.sh to push fresh images to the registry."
 echo ""
-print_warning "If some remote deletions failed, you may need to:"
-echo "  1. Manually delete images from the registry UI"
-echo "  2. Or use 'skopeo delete' with proper authentication"
-echo "  3. For OpenShift: 'oc delete imagestream <name> -n <namespace>'"
+print_warning "If pods still pull wrong images after cleanup + reinstall:"
+echo "  1. The Kubernetes nodes may have cached corrupt images"
+echo "  2. SSH to affected nodes and run: crictl rmi --all"
+echo "  3. Or delete and recreate the node"
