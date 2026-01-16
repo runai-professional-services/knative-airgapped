@@ -14,32 +14,32 @@
 set -e
 
 # Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+RED=$'\033[0;31m'
+GREEN=$'\033[0;32m'
+YELLOW=$'\033[1;33m'
+BLUE=$'\033[0;34m'
+NC=$'\033[0m' # No Color
 
 print_header() {
-    echo -e "\n${BLUE}=============================================="
-    echo -e "$1"
-    echo -e "==============================================${NC}\n"
+    echo "\n${BLUE}=============================================="
+    echo "$1"
+    echo "==============================================${NC}\n"
 }
 
 print_step() {
-    echo -e "${GREEN}>>> $1${NC}"
+    echo "${GREEN}>>> $1${NC}"
 }
 
 print_substep() {
-    echo -e "    ${YELLOW}- $1${NC}"
+    echo "    ${YELLOW}- $1${NC}"
 }
 
 print_error() {
-    echo -e "${RED}ERROR: $1${NC}"
+    echo "${RED}ERROR: $1${NC}"
 }
 
 print_warning() {
-    echo -e "${YELLOW}WARNING: $1${NC}"
+    echo "${YELLOW}WARNING: $1${NC}"
 }
 
 # Detect container tool (same logic as install.sh)
@@ -143,7 +143,7 @@ fi
 print_substep "Cleaning dangling images..."
 $CONTAINER_CMD image prune -f 2>/dev/null || true
 
-echo -e "${GREEN}Local image cleanup complete${NC}"
+echo "${GREEN}Local image cleanup complete${NC}"
 
 #######################################
 # Step 2: Clean remote registry images
@@ -252,7 +252,7 @@ for repo in "${KNATIVE_REPOS[@]}"; do
     delete_repo_tags "$repo"
 done
 
-echo -e "${GREEN}Remote registry cleanup complete${NC}"
+echo "${GREEN}Remote registry cleanup complete${NC}"
 
 #######################################
 # Step 3: OpenShift-specific cleanup
@@ -275,7 +275,7 @@ if command -v oc &> /dev/null; then
             oc delete imagestreamtag "${name}" --all-namespaces 2>/dev/null || true
         done
         
-        echo -e "${GREEN}OpenShift cleanup complete${NC}"
+        echo "${GREEN}OpenShift cleanup complete${NC}"
     else
         print_warning "Not logged into OpenShift cluster, skipping OCP-specific cleanup"
     fi
