@@ -147,165 +147,121 @@ echo "${GREEN}Local image cleanup complete${NC}"
 
 #######################################
 # Step 2: Clean remote registry images
+# Uses Docker Registry HTTP API v2
+# Works with any compliant registry
 #######################################
 print_step "Cleaning remote registry images..."
 
-# Check if we're logged in
-check_registry_login() {
-    if $CONTAINER_CMD login --get-login "$PRIVATE_REGISTRY_URL" &>/dev/null; then
-        return 0
-    fi
-    
-    # Try to login if credentials are provided
+# Build auth header for registry API calls
+get_auth_header() {
     if [[ -n "${PRIVATE_REGISTRY_USERNAME:-}" && -n "${PRIVATE_REGISTRY_PASSWORD:-}" ]]; then
-        print_substep "Logging in to registry..."
-        echo "$PRIVATE_REGISTRY_PASSWORD" | $CONTAINER_CMD login "$PRIVATE_REGISTRY_URL" \
-            -u "$PRIVATE_REGISTRY_USERNAME" --password-stdin 2>/dev/null
-        return $?
+        echo "-u ${PRIVATE_REGISTRY_USERNAME}:${PRIVATE_REGISTRY_PASSWORD}"
+    else
+        # Try to extract credentials from podman/docker config
+        local auth_file=""
+        if [[ -f "${XDG_RUNTIME_DIR}/containers/auth.json" ]]; then
+            auth_file="${XDG_RUNTIME_DIR}/containers/auth.json"
+        elif [[ -f "$HOME/.docker/config.json" ]]; then
+            auth_file="$HOME/.docker/config.json"
+        fi
+        
+        if [[ -n "$auth_file" ]]; then
+            local encoded_auth=$(jq -r --arg reg "$PRIVATE_REGISTRY_URL" '.auths[$reg].auth // empty' "$auth_file" 2>/dev/null || true)
+            if [[ -n "$encoded_auth" ]]; then
+                echo "-H \"Authorization: Basic ${encoded_auth}\""
+            fi
+        fi
     fi
-    
-    print_warning "Not logged in to registry. Some cleanup operations may fail."
-    return 1
 }
 
-# Delete image from registry using the registry API
-delete_from_registry() {
+AUTH_HEADER=$(get_auth_header)
+
+# Check if we can reach the registry
+print_substep "Testing registry connectivity..."
+if curl -sf ${AUTH_HEADER} "https://${PRIVATE_REGISTRY_URL}/v2/" &>/dev/null; then
+    echo "      Registry is accessible"
+else
+    print_warning "Cannot reach registry API. Will try deletion anyway."
+fi
+
+# Delete a specific image tag from registry
+delete_image_from_registry() {
     local repo=$1
     local tag=$2
     local full_image="${PRIVATE_REGISTRY_URL}/${repo}:${tag}"
     
-    print_substep "Deleting from registry: $full_image"
+    echo "      Deleting: ${repo}:${tag}"
     
-    # Method 1: Try skopeo if available
-    if command -v skopeo &> /dev/null; then
-        skopeo delete "docker://${full_image}" 2>/dev/null && return 0
+    # Step 1: Get the manifest digest using podman/docker
+    local digest=""
+    
+    # Try to get digest from container tool
+    digest=$($CONTAINER_CMD manifest inspect "${full_image}" 2>/dev/null | grep -o '"digest"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+    
+    # If that didn't work, try the registry API directly
+    if [[ -z "$digest" ]]; then
+        digest=$(curl -sf ${AUTH_HEADER} \
+            -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+            -H "Accept: application/vnd.oci.image.manifest.v1+json" \
+            -I "https://${PRIVATE_REGISTRY_URL}/v2/${repo}/manifests/${tag}" 2>/dev/null \
+            | grep -i "docker-content-digest" | awk '{print $2}' | tr -d '\r' || true)
     fi
     
-    # Method 2: Try using registry API directly
-    # Get the manifest digest first
-    local digest
-    digest=$($CONTAINER_CMD manifest inspect "$full_image" 2>/dev/null | jq -r '.digest // empty' 2>/dev/null || true)
-    
-    if [[ -n "$digest" ]]; then
-        # Construct the delete URL
-        local registry_url="https://${PRIVATE_REGISTRY_URL}/v2/${repo}/manifests/${digest}"
-        
-        # Get auth token if available
-        local auth_header=""
-        if [[ -n "${PRIVATE_REGISTRY_USERNAME:-}" && -n "${PRIVATE_REGISTRY_PASSWORD:-}" ]]; then
-            auth_header="-u ${PRIVATE_REGISTRY_USERNAME}:${PRIVATE_REGISTRY_PASSWORD}"
-        fi
-        
-        # Try to delete
-        curl -s -X DELETE $auth_header "$registry_url" 2>/dev/null || true
+    if [[ -z "$digest" ]]; then
+        echo "        Could not get digest, skipping"
+        return 1
     fi
     
-    # Method 3: If this is OpenShift internal registry, use oc if available
-    if command -v oc &> /dev/null && [[ "$PRIVATE_REGISTRY_URL" == *"openshift"* ]]; then
-        # Extract namespace and image name
-        local namespace=$(echo "$repo" | cut -d'/' -f1)
-        local imagename=$(echo "$repo" | cut -d'/' -f2-)
-        oc delete imagestreamtag "${imagename}:${tag}" -n "$namespace" 2>/dev/null || true
-    fi
+    # Step 2: Delete the manifest by digest
+    local response
+    response=$(curl -sf -X DELETE ${AUTH_HEADER} \
+        "https://${PRIVATE_REGISTRY_URL}/v2/${repo}/manifests/${digest}" 2>&1) && {
+        echo "        Deleted (digest: ${digest:0:20}...)"
+        return 0
+    } || {
+        echo "        Delete failed (registry may not support deletion)"
+        return 1
+    }
 }
 
-# Delete all tags from a repository
-delete_repo_tags() {
+# List and delete all tags for a repository
+delete_all_tags_for_repo() {
     local repo=$1
-    local full_repo="${PRIVATE_REGISTRY_URL}/${repo}"
     
-    print_substep "Checking repository: $repo"
+    print_substep "Processing repository: $repo"
     
-    # Get list of tags
+    # Get list of tags from registry API
+    local tags_json
+    tags_json=$(curl -sf ${AUTH_HEADER} "https://${PRIVATE_REGISTRY_URL}/v2/${repo}/tags/list" 2>/dev/null || true)
+    
+    if [[ -z "$tags_json" ]]; then
+        echo "      Repository not found or no access"
+        return
+    fi
+    
     local tags
+    tags=$(echo "$tags_json" | jq -r '.tags[]?' 2>/dev/null || true)
     
-    # Try skopeo first
-    if command -v skopeo &> /dev/null; then
-        tags=$(skopeo list-tags "docker://${full_repo}" 2>/dev/null | jq -r '.Tags[]?' 2>/dev/null || true)
-    fi
-    
-    # If skopeo didn't work, try the registry API
     if [[ -z "$tags" ]]; then
-        local auth_header=""
-        if [[ -n "${PRIVATE_REGISTRY_USERNAME:-}" && -n "${PRIVATE_REGISTRY_PASSWORD:-}" ]]; then
-            auth_header="-u ${PRIVATE_REGISTRY_USERNAME}:${PRIVATE_REGISTRY_PASSWORD}"
-        fi
-        tags=$(curl -s $auth_header "https://${PRIVATE_REGISTRY_URL}/v2/${repo}/tags/list" 2>/dev/null | jq -r '.tags[]?' 2>/dev/null || true)
+        echo "      No tags found"
+        return
     fi
     
-    if [[ -n "$tags" ]]; then
-        echo "$tags" | while read -r tag; do
-            if [[ -n "$tag" ]]; then
-                delete_from_registry "$repo" "$tag"
-            fi
-        done
-    else
-        print_substep "No tags found or unable to list tags for $repo"
-    fi
-}
-
-# Check login status
-check_registry_login || true
-
-# Delete each knative repo
-for repo in "${KNATIVE_REPOS[@]}"; do
-    delete_repo_tags "$repo"
-done
-
-echo "${GREEN}Remote registry cleanup complete${NC}"
-
-#######################################
-# Step 3: OpenShift-specific cleanup
-#######################################
-print_step "OpenShift ImageStream cleanup..."
-
-# Try oc first, fall back to kubectl
-OC_CMD=""
-if command -v oc &> /dev/null && oc whoami &>/dev/null 2>&1; then
-    OC_CMD="oc"
-elif command -v kubectl &> /dev/null; then
-    # Check if this cluster has ImageStream CRD (OpenShift)
-    if kubectl api-resources 2>/dev/null | grep -q "imagestreams"; then
-        OC_CMD="kubectl"
-    fi
-fi
-
-if [[ -n "$OC_CMD" ]]; then
-    print_substep "Using $OC_CMD for ImageStream cleanup..."
-    
-    # Delete ImageStreams in knative namespace
-    print_substep "Deleting ImageStreams in 'knative' namespace..."
-    $OC_CMD delete imagestream --all -n knative 2>/dev/null && echo "      Deleted all in knative" || echo "      No imagestreams in knative or namespace doesn't exist"
-    
-    # Delete ImageStreams in envoyproxy namespace
-    print_substep "Deleting ImageStreams in 'envoyproxy' namespace..."
-    $OC_CMD delete imagestream --all -n envoyproxy 2>/dev/null && echo "      Deleted all in envoyproxy" || echo "      No imagestreams in envoyproxy or namespace doesn't exist"
-    
-    # Also try to delete individual imagestreams by name in case they're in different namespaces
-    print_substep "Searching for knative-related ImageStreams in all namespaces..."
-    IMAGESTREAM_NAMES="activator autoscaler autoscaler-hpa controller webhook queue kourier migrate cleanup operator operator-webhook envoy"
-    
-    for isname in $IMAGESTREAM_NAMES; do
-        # Find and delete imagestreams with this name in any namespace
-        found_is=$($OC_CMD get imagestream "$isname" --all-namespaces -o jsonpath='{range .items[*]}{.metadata.namespace}/{.metadata.name}{"\n"}{end}' 2>/dev/null || true)
-        if [[ -n "$found_is" ]]; then
-            echo "$found_is" | while read -r ns_is; do
-                ns="${ns_is%%/*}"
-                is="${ns_is##*/}"
-                echo "      Deleting imagestream $is in namespace $ns"
-                $OC_CMD delete imagestream "$is" -n "$ns" 2>/dev/null || true
-            done
+    # Delete each tag
+    echo "$tags" | while read -r tag; do
+        if [[ -n "$tag" ]]; then
+            delete_image_from_registry "$repo" "$tag"
         fi
     done
-    
-    echo "${GREEN}OpenShift ImageStream cleanup complete${NC}"
-else
-    print_warning "No oc/kubectl with ImageStream support found. Skipping OpenShift cleanup."
-    echo ""
-    echo "    If your registry is on OpenShift, manually delete ImageStreams:"
-    echo "      oc delete imagestream --all -n knative"
-    echo "      oc delete imagestream --all -n envoyproxy"
-fi
+}
+
+# Process each repository
+for repo in "${KNATIVE_REPOS[@]}"; do
+    delete_all_tags_for_repo "$repo"
+done
+
+echo ""
+echo "${GREEN}Remote registry cleanup complete${NC}"
 
 #######################################
 # Summary
@@ -315,13 +271,15 @@ print_header "Cleanup Complete"
 echo "The following has been cleaned:"
 echo "  ✓ Local container images matching knative/kourier/envoy patterns"
 echo "  ✓ Cached images from $PRIVATE_REGISTRY_URL"
-echo "  ✓ Remote registry images (where accessible)"
-echo "  ✓ OpenShift ImageStreams (if applicable)"
+echo "  ✓ Remote registry images (via Registry HTTP API v2)"
 
 echo ""
 echo "You can now run install.sh to push fresh images to the registry."
 echo ""
+print_warning "If registry deletion failed:"
+echo "  - Your registry may have deletion disabled (common default)"
+echo "  - Enable deletion in your registry config, or delete via registry UI"
+echo ""
 print_warning "If pods still pull wrong images after cleanup + reinstall:"
-echo "  1. The Kubernetes nodes may have cached corrupt images"
-echo "  2. SSH to affected nodes and run: crictl rmi --all"
-echo "  3. Or delete and recreate the node"
+echo "  - Kubernetes nodes may have cached corrupt images"
+echo "  - SSH to affected nodes and run: crictl rmi --all"
