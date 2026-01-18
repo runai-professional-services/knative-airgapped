@@ -88,6 +88,55 @@ detect_container_runtime() {
     fi
 }
 
+detect_target_architecture() {
+    # If TARGET_ARCH is already set via env var, use it
+    if [[ -n "${TARGET_ARCH}" ]]; then
+        echo "Using target architecture: ${TARGET_ARCH} (from environment)"
+        return
+    fi
+    
+    # Try to detect from cluster nodes
+    if command -v kubectl &> /dev/null; then
+        # Check if we have a valid kubeconfig and cluster access
+        if kubectl cluster-info &>/dev/null; then
+            # Get the most common architecture from cluster nodes
+            local node_arch
+            node_arch=$(kubectl get nodes -o jsonpath='{.items[0].status.nodeInfo.architecture}' 2>/dev/null)
+            
+            if [[ -n "${node_arch}" ]]; then
+                case "${node_arch}" in
+                    amd64|x86_64)
+                        TARGET_ARCH="linux/amd64"
+                        ;;
+                    arm64|aarch64)
+                        TARGET_ARCH="linux/arm64"
+                        ;;
+                    *)
+                        TARGET_ARCH="linux/${node_arch}"
+                        ;;
+                esac
+                echo "Detected target architecture from cluster: ${TARGET_ARCH}"
+                return
+            fi
+        fi
+    fi
+    
+    # Fallback: prompt user
+    echo ""
+    echo "Could not detect target cluster architecture."
+    echo "Please specify the target Kubernetes node architecture:"
+    echo "  1) linux/amd64 (x86_64 - most common)"
+    echo "  2) linux/arm64 (ARM64/aarch64)"
+    echo ""
+    read -p "Enter choice [1/2] (default: 1): " choice
+    
+    case "$choice" in
+        2|arm64|linux/arm64) TARGET_ARCH="linux/arm64" ;;
+        *) TARGET_ARCH="linux/amd64" ;;
+    esac
+    echo "Using target architecture: ${TARGET_ARCH}"
+}
+
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -98,6 +147,7 @@ echo "Knative Version: ${KNATIVE_VERSION}"
 echo "Envoy Version: ${ENVOY_VERSION}"
 
 detect_container_runtime
+detect_target_architecture
 
 # Create temporary build directory
 BUILD_DIR=$(mktemp -d)
@@ -151,8 +201,8 @@ IMAGES=(
 )
 
 for img in "${IMAGES[@]}"; do
-    echo "Pulling: ${img}"
-    ${CONTAINER_CMD} pull "${img}"
+    echo "Pulling: ${img} (${TARGET_ARCH})"
+    ${CONTAINER_CMD} pull --platform "${TARGET_ARCH}" "${img}"
 done
 
 # -----------------------------------------------------------------------------
