@@ -509,14 +509,20 @@ helm upgrade --install knative-operator \
     --set knative_operator.operator_webhook.image="${PRIVATE_REGISTRY_URL}/knative/operator-webhook" \
     --set knative_operator.operator_webhook.tag="v${KNATIVE_VERSION}"
 
+print_substep "Patching deployments with imagePullPolicy: Always..."
+for deploy in knative-operator operator-webhook; do
+    kubectl patch deployment -n knative-operator "$deploy" \
+        -p '{"spec":{"template":{"spec":{"containers":[{"name":"'"$deploy"'","imagePullPolicy":"Always"}]}}}}' 2>/dev/null || true
+done
+
 print_substep "Waiting for ServiceAccounts to be created..."
 sleep 5
 
 print_substep "Patching ServiceAccounts with imagePullSecrets..."
 patch_all_service_accounts "knative-operator"
 
-print_substep "Deleting pods to pick up imagePullSecrets..."
-sleep 5
+print_substep "Deleting pods to pick up changes..."
+sleep 3
 kubectl delete pods -n knative-operator --all --force --grace-period=0 2>/dev/null || true
 
 print_substep "Waiting for Operator to be ready..."
@@ -571,8 +577,18 @@ patch_all_service_accounts "knative-serving"
 
 # Note: RBAC is managed by Knative Operator - no custom RBAC needed
 
-print_substep "Restarting pods to pick up updated ServiceAccounts..."
-sleep 5
+print_substep "Patching deployments with imagePullPolicy: Always..."
+for deploy in $(kubectl get deployments -n knative-serving -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do
+    # Get the container name (usually same as deployment name or first container)
+    container=$(kubectl get deployment -n knative-serving "$deploy" -o jsonpath='{.spec.template.spec.containers[0].name}' 2>/dev/null)
+    if [[ -n "$container" ]]; then
+        kubectl patch deployment -n knative-serving "$deploy" \
+            -p '{"spec":{"template":{"spec":{"containers":[{"name":"'"$container"'","imagePullPolicy":"Always"}]}}}}' 2>/dev/null || true
+    fi
+done
+
+print_substep "Restarting pods to pick up changes..."
+sleep 3
 kubectl delete pods -n knative-serving --all --force --grace-period=0 2>/dev/null || true
 
 print_substep "Waiting for KnativeServing to be ready..."
