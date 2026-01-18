@@ -275,6 +275,33 @@ print_substep "Deleting any remaining Knative APIServices..."
 delete_by_pattern "apiservice" "knative"
 
 # =============================================================================
+# Step 9: Clean up local container images (optional)
+# =============================================================================
+if [[ -n "${CONTAINER_CMD}" ]] || command -v podman &>/dev/null || command -v docker &>/dev/null; then
+    print_step "Cleaning up local container images..."
+    
+    # Detect container command
+    if [[ -z "${CONTAINER_CMD}" ]]; then
+        if command -v podman &>/dev/null; then
+            CONTAINER_CMD="podman"
+        elif command -v docker &>/dev/null; then
+            CONTAINER_CMD="docker"
+        fi
+    fi
+    
+    if [[ -n "${CONTAINER_CMD}" ]]; then
+        print_substep "Removing Knative-related images from local cache..."
+        # Remove knative images
+        ${CONTAINER_CMD} images | grep -E "knative|kourier|envoy" | awk '{print $3}' | sort -u | xargs -r ${CONTAINER_CMD} rmi --force 2>/dev/null || true
+        
+        print_substep "Pruning dangling images..."
+        ${CONTAINER_CMD} image prune -f 2>/dev/null || true
+        
+        echo "    Local image cleanup complete"
+    fi
+fi
+
+# =============================================================================
 # Verification
 # =============================================================================
 print_step "Verifying cleanup..."
