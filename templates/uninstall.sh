@@ -8,6 +8,10 @@
 #
 # Options:
 #   --force    Skip confirmation prompts
+#
+# Environment Variables:
+#   CONTAINER_CMD       - Container tool to use (docker or podman)
+#   CLEAN_ALL_IMAGES    - If "true", removes ALL local container images (not just Knative)
 
 set -e
 
@@ -290,9 +294,14 @@ if [[ -n "${CONTAINER_CMD}" ]] || command -v podman &>/dev/null || command -v do
     fi
     
     if [[ -n "${CONTAINER_CMD}" ]]; then
-        print_substep "Removing Knative-related images from local cache..."
-        # Remove knative images
-        ${CONTAINER_CMD} images | grep -E "knative|kourier|envoy" | awk '{print $3}' | sort -u | xargs -r ${CONTAINER_CMD} rmi --force 2>/dev/null || true
+        if [[ "${CLEAN_ALL_IMAGES}" == "true" ]]; then
+            print_substep "Removing ALL local container images (CLEAN_ALL_IMAGES=true)..."
+            ${CONTAINER_CMD} images -q | sort -u | xargs -r ${CONTAINER_CMD} rmi --force 2>/dev/null || true
+        else
+            print_substep "Removing Knative-related images from local cache..."
+            # Remove knative images
+            ${CONTAINER_CMD} images | grep -E "knative|kourier|envoy" | awk '{print $3}' | sort -u | xargs -r ${CONTAINER_CMD} rmi --force 2>/dev/null || true
+        fi
         
         print_substep "Pruning dangling images..."
         ${CONTAINER_CMD} image prune -f 2>/dev/null || true
