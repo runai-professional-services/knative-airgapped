@@ -25,6 +25,9 @@ spec:
       migrate: ${PRIVATE_REGISTRY_URL}/knative/migrate:v${KNATIVE_VERSION}
 
   config:
+    config-deployment:
+      # Queue-proxy sidecar image for user workloads (critical for air-gapped)
+      queue-sidecar-image: ${PRIVATE_REGISTRY_URL}/knative/queue:v${KNATIVE_VERSION}
     config-autoscaler:
       enable-scale-to-zero: "true"
     config-features:

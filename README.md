@@ -59,6 +59,24 @@ It will then automatically:
 4. Configure image pull secrets
 5. Verify the installation
 
+### 4. Configure Run:ai Registry Credentials (Required for Inference)
+
+> **Important**: Knative injects a `queue-proxy` sidecar container into every inference workload pod. This image must be pullable from your private registry by pods in **any namespace**.
+
+Run:ai provides a built-in solution for this via **Workload Credentials**:
+
+1. Go to **Run:ai UI → Workload Manager → Credentials**
+2. Click **+NEW CREDENTIAL** → Select **Docker registry**
+3. Configure:
+   - **Scope**: Select your **Cluster** (cluster-wide scope)
+   - **Name**: `knative-registry` (or any descriptive name)
+   - **New secret**: Enter your registry URL, username, and password
+4. Click **CREATE CREDENTIAL**
+
+This ensures that **all inference workloads** across all projects/namespaces can pull the `queue-proxy` image from your private registry.
+
+📖 See: [Run:ai Credentials Documentation](https://run-ai-docs.nvidia.com/self-hosted/workloads-in-nvidia-run-ai/assets/credentials#docker-registry)
+
 ## Prerequisites
 
 ### Connected Host
@@ -166,4 +184,5 @@ The installer is idempotent - safe to run multiple times:
 ## References
 
 - [Knative Operator Documentation](https://knative.dev/docs/install/operator/knative-with-operators/)
+- [Run:ai Workload Credentials](https://run-ai-docs.nvidia.com/self-hosted/workloads-in-nvidia-run-ai/assets/credentials#docker-registry)
 - [NVIDIA Run:ai System Requirements](https://docs.run.ai/latest/admin/runai-setup/cluster-setup/cluster-prerequisites/)
