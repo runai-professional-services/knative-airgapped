@@ -2,21 +2,38 @@
 
 Automated installation of **Knative Operator** for air-gapped environments. The Knative Operator manages the lifecycle of Knative Serving (with Kourier ingress) on your cluster.
 
-This toolkit is designed for use with NVIDIA Run:ai inference workloads, but can be used for any air-gapped Knative Operator deployment.
+This toolkit is designed for use with NVIDIA Run:ai inference workloads.
+
+## Compatibility
+
+| Component | Version | Notes |
+|-----------|---------|-------|
+| **Knative Operator** | 1.18.0 | Supported by most Run:ai versions ([see docs](https://run-ai-docs.nvidia.com/self-hosted/getting-started/installation/install-using-helm/system-requirements#inference)) |
+| **Envoy** | v1.31.2 | Compatible with Kourier in Knative 1.18 |
+| **Kubernetes** | Vanilla K8s | Tested on vanilla Kubernetes |
+
+> **Note**: Support for newer Knative versions will come soon.
+
+> **OpenShift**: OCP installations require the Red Hat Serverless Operator, which uses a different approach. Support for OCP will be added to this repo in the future.
 
 ## Quick Start
 
 ### 1. Prepare Bundle (Connected Host)
 
-On a host with internet access:
+On a host with internet access, first clone this repository:
 
 ```bash
+git clone https://github.com/runai-professional-services/knative-airgapped.git
+cd knative-airgapped
+
 ./prepare.sh
 ```
 
+> **Important**: The script must run from the repository directory as it copies template files from `templates/`.
+
 This will:
 - Download the Knative Operator Helm chart
-- Pull all required container images
+- Pull all required container images (for target cluster architecture)
 - Create a transferable archive: `knative-airgapped-1.18.0.tar.gz`
 
 ### 2. Transfer
@@ -29,9 +46,6 @@ Copy `knative-airgapped-1.18.0.tar.gz` to your air-gapped environment.
 # Extract the bundle
 tar -xzf knative-airgapped-1.18.0.tar.gz
 cd knative-airgapped-1.18.0/
-
-# Log in to your private registry first
-docker login <your-registry>   # or: podman login <your-registry>
 
 # Run the installer
 ./install.sh
@@ -53,11 +67,12 @@ export PRIVATE_REGISTRY_PASSWORD=secret
 ```
 
 It will then automatically:
-1. Load and push images to your private registry
-2. Install Knative Operator via Helm
-3. Deploy KnativeServing CR
-4. Configure image pull secrets
-5. Verify the installation
+1. Log in to your private registry
+2. Load and push images to your private registry
+3. Install Knative Operator via Helm
+4. Deploy KnativeServing CR
+5. Configure image pull secrets
+6. Verify the installation
 
 ### 4. Configure Run:ai Registry Credentials (Required for Inference)
 
@@ -82,39 +97,15 @@ This ensures that **all inference workloads** across all projects/namespaces can
 ### Connected Host
 - `podman` or `docker` CLI
 - `helm` CLI (v3.14+)
+- `git` CLI
 - Internet access
+- (Optional) `kubectl` access to target cluster for architecture auto-detection
 
 ### Air-Gapped Environment
 - `podman` or `docker` CLI
 - `helm` CLI (v3.14+)
 - `kubectl` CLI configured to access your cluster
 - Access to a private container registry
-- Logged in to the private registry
-
-## Configuration
-
-### Knative Operator Version
-
-Default version is **1.18.0**. To use a different version:
-
-```bash
-export KNATIVE_VERSION=1.17.0
-./prepare.sh
-```
-
-### Timeouts
-
-The installer waits for resources to be ready. Default timeouts:
-- Operator: 300s
-- Serving: 300s
-
-Override with environment variables:
-
-```bash
-export OPERATOR_TIMEOUT=600s
-export SERVING_TIMEOUT=600s
-./install.sh
-```
 
 ## What's Included
 
@@ -130,59 +121,32 @@ export SERVING_TIMEOUT=600s
 
 ### Bundle Contents
 
-After running `prepare.sh`:
-
 ```
-knative-airgapped-1.18.0.tar.gz
-└── knative-airgapped-1.18.0/
-    ├── install.sh                      # Installation script
-    ├── knative-operator-1.18.0.tgz     # Helm chart
-    ├── knative-images.tar              # Container images
-    ├── knative-serving.yaml.tpl        # KnativeServing template
-    ├── VERSION                         # Knative Operator version
-    └── ENVOY_VERSION                   # Envoy version
+knative-airgapped-1.18.0/
+├── install.sh                      # Installation script
+├── knative-operator-v1.18.0.tgz    # Helm chart
+├── knative-images.tar              # Container images
+├── knative-serving.yaml.tpl        # KnativeServing template
+├── VERSION                         # Knative version
+└── ENVOY_VERSION                   # Envoy version
 ```
 
 ## Troubleshooting
 
-### Check Operator Status
-
 ```bash
+# Check operator status
 kubectl get pods -n knative-operator
-kubectl logs -n knative-operator -l app.kubernetes.io/name=knative-operator
-```
 
-### Check Serving Status
-
-```bash
+# Check serving status
 kubectl get pods -n knative-serving
-kubectl get knativeserving -n knative-serving -o yaml
-```
+kubectl get knativeserving -n knative-serving
 
-### Image Pull Errors
-
-If pods fail with `ImagePullBackOff`:
-
-1. Verify images are in your private registry
-2. Check image pull secrets exist:
-   ```bash
-   kubectl get secrets -n knative-serving knative-registry-creds
-   ```
-3. Verify ServiceAccounts have the secret:
-   ```bash
-   kubectl get sa -n knative-serving -o yaml | grep imagePullSecrets
-   ```
-
-### Re-run Installation
-
-The installer is idempotent - safe to run multiple times:
-
-```bash
+# The installer is idempotent - safe to re-run
 ./install.sh
 ```
 
 ## References
 
-- [Knative Operator Documentation](https://knative.dev/docs/install/operator/knative-with-operators/)
+- [Run:ai Inference System Requirements](https://run-ai-docs.nvidia.com/self-hosted/getting-started/installation/install-using-helm/system-requirements#inference)
 - [Run:ai Workload Credentials](https://run-ai-docs.nvidia.com/self-hosted/workloads-in-nvidia-run-ai/assets/credentials#docker-registry)
-- [NVIDIA Run:ai System Requirements](https://docs.run.ai/latest/admin/runai-setup/cluster-setup/cluster-prerequisites/)
+- [Knative Operator Documentation](https://knative.dev/docs/install/operator/knative-with-operators/)
