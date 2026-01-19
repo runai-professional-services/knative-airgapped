@@ -10,7 +10,8 @@ This toolkit is designed for use with NVIDIA Run:ai inference workloads.
 |-----------|---------|-------|
 | **Knative Operator** | 1.18.0 | Supported by most Run:ai versions ([see docs](https://run-ai-docs.nvidia.com/self-hosted/getting-started/installation/install-using-helm/system-requirements#inference)) |
 | **Envoy** | v1.31.2 | Compatible with Kourier in Knative 1.18 |
-| **Kubernetes** | Vanilla K8s | Tested on vanilla Kubernetes |
+| **Kubernetes** | v1.31.4 | Tested on vanilla Kubernetes |
+| **Run:ai** | 2.24.14 | Self-hosted version |
 
 > **Note**: Support for newer Knative versions will come soon.
 
