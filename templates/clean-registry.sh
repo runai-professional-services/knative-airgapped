@@ -154,8 +154,8 @@ print_step "Cleaning remote registry images..."
 
 # Build auth header for registry API calls
 get_auth_header() {
-    if [[ -n "${PRIVATE_REGISTRY_USERNAME:-}" && -n "${PRIVATE_REGISTRY_PASSWORD:-}" ]]; then
-        echo "-u ${PRIVATE_REGISTRY_USERNAME}:${PRIVATE_REGISTRY_PASSWORD}"
+    if [[ -n "${PRIVATE_REGISTRY_PUSH_USERNAME:-}" && -n "${PRIVATE_REGISTRY_PUSH_PASSWORD:-}" ]]; then
+        echo "-u ${PRIVATE_REGISTRY_PUSH_USERNAME}:${PRIVATE_REGISTRY_PUSH_PASSWORD}"
     else
         # Try to extract credentials from podman/docker config
         local auth_file=""

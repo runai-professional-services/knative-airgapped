@@ -65,8 +65,8 @@ export CONTAINER_CMD=docker
 export PRIVATE_REGISTRY_URL=registry.example.com
 
 # Push credentials (write access) - used to push images to registry
-export PRIVATE_REGISTRY_USERNAME=push-user
-export PRIVATE_REGISTRY_PASSWORD=push-secret
+export PRIVATE_REGISTRY_PUSH_USERNAME=push-user
+export PRIVATE_REGISTRY_PUSH_PASSWORD=push-secret
 
 # Pull credentials (read-only) - used for Kubernetes ImagePullSecrets
 # Optional: if not set, push credentials are used for both

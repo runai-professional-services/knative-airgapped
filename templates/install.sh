@@ -20,8 +20,8 @@
 #   PRIVATE_REGISTRY_URL       - Private registry URL
 #
 #   Push credentials (write access - for pushing images to registry):
-#   PRIVATE_REGISTRY_USERNAME  - Registry username for pushing images
-#   PRIVATE_REGISTRY_PASSWORD  - Registry password for pushing images
+#   PRIVATE_REGISTRY_PUSH_USERNAME  - Registry username for pushing images
+#   PRIVATE_REGISTRY_PUSH_PASSWORD  - Registry password for pushing images
 #
 #   Pull credentials (read-only - for cluster ImagePullSecrets):
 #   PRIVATE_REGISTRY_PULL_USERNAME  - Registry username for pull secrets (defaults to push username)
@@ -163,10 +163,10 @@ validate_registry_login() {
     
     # If not logged in, attempt auto-login with provided credentials
     if [[ "${logged_in}" != "true" ]]; then
-        if [[ -n "${PRIVATE_REGISTRY_USERNAME}" && -n "${PRIVATE_REGISTRY_PASSWORD}" ]]; then
+        if [[ -n "${PRIVATE_REGISTRY_PUSH_USERNAME}" && -n "${PRIVATE_REGISTRY_PUSH_PASSWORD}" ]]; then
             echo "Not logged in. Attempting login with provided credentials..."
-            if echo "${PRIVATE_REGISTRY_PASSWORD}" | ${CONTAINER_CMD} login "${PRIVATE_REGISTRY_URL}" \
-                --username "${PRIVATE_REGISTRY_USERNAME}" --password-stdin; then
+            if echo "${PRIVATE_REGISTRY_PUSH_PASSWORD}" | ${CONTAINER_CMD} login "${PRIVATE_REGISTRY_URL}" \
+                --username "${PRIVATE_REGISTRY_PUSH_USERNAME}" --password-stdin; then
                 echo "Successfully logged in to ${PRIVATE_REGISTRY_URL}"
                 logged_in=true
             else
@@ -177,7 +177,7 @@ validate_registry_login() {
         print_error "Not logged in to ${PRIVATE_REGISTRY_URL}"
         echo ""
             echo "Please either:"
-            echo "  1. Set PRIVATE_REGISTRY_USERNAME and PRIVATE_REGISTRY_PASSWORD environment variables, or"
+            echo "  1. Set PRIVATE_REGISTRY_PUSH_USERNAME and PRIVATE_REGISTRY_PUSH_PASSWORD environment variables, or"
             echo "  2. Log in manually: ${CONTAINER_CMD} login ${PRIVATE_REGISTRY_URL}"
         echo ""
         exit 1
@@ -189,16 +189,16 @@ validate_registry_login() {
 
 prompt_registry_credentials() {
     # Push credentials (write access) for pushing images to registry
-    if [[ -n "${PRIVATE_REGISTRY_USERNAME}" && -n "${PRIVATE_REGISTRY_PASSWORD}" ]]; then
-        echo "Using push credentials from environment (PRIVATE_REGISTRY_USERNAME)"
+    if [[ -n "${PRIVATE_REGISTRY_PUSH_USERNAME}" && -n "${PRIVATE_REGISTRY_PUSH_PASSWORD}" ]]; then
+        echo "Using push credentials from environment (PRIVATE_REGISTRY_PUSH_USERNAME)"
     else
         echo ""
         echo "Enter credentials for PUSHING images to registry (needs write access):"
-        read -p "Push username: " PRIVATE_REGISTRY_USERNAME
-        read -s -p "Push password: " PRIVATE_REGISTRY_PASSWORD
+        read -p "Push username: " PRIVATE_REGISTRY_PUSH_USERNAME
+        read -s -p "Push password: " PRIVATE_REGISTRY_PUSH_PASSWORD
         echo ""
         
-        if [[ -z "${PRIVATE_REGISTRY_USERNAME}" || -z "${PRIVATE_REGISTRY_PASSWORD}" ]]; then
+        if [[ -z "${PRIVATE_REGISTRY_PUSH_USERNAME}" || -z "${PRIVATE_REGISTRY_PUSH_PASSWORD}" ]]; then
             print_error "Push credentials are required for uploading images to registry."
             exit 1
         fi
@@ -213,7 +213,7 @@ prompt_registry_credentials() {
         echo ""
         echo "Pull credentials for Kubernetes ImagePullSecrets (read-only access):"
         echo "  Press Enter to use the same as push credentials, or enter different ones."
-        read -p "Pull username [${PRIVATE_REGISTRY_USERNAME}]: " input_pull_user
+        read -p "Pull username [${PRIVATE_REGISTRY_PUSH_USERNAME}]: " input_pull_user
         
         if [[ -n "${input_pull_user}" ]]; then
             PRIVATE_REGISTRY_PULL_USERNAME="${input_pull_user}"
@@ -226,8 +226,8 @@ prompt_registry_credentials() {
             fi
         else
             # Use push credentials as pull credentials
-            PRIVATE_REGISTRY_PULL_USERNAME="${PRIVATE_REGISTRY_USERNAME}"
-            PRIVATE_REGISTRY_PULL_PASSWORD="${PRIVATE_REGISTRY_PASSWORD}"
+            PRIVATE_REGISTRY_PULL_USERNAME="${PRIVATE_REGISTRY_PUSH_USERNAME}"
+            PRIVATE_REGISTRY_PULL_PASSWORD="${PRIVATE_REGISTRY_PUSH_PASSWORD}"
             echo "Using push credentials for pull secrets"
         fi
     fi
