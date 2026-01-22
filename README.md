@@ -55,17 +55,28 @@ cd knative-airgapped-1.18.0/
 The installer will prompt for:
 - Container tool (docker/podman) — auto-detected if only one is installed
 - Private registry URL
-- Registry credentials (for Kubernetes image pull secrets)
+- **Push credentials** (write access) — for uploading images to your registry
+- **Pull credentials** (read-only) — for Kubernetes ImagePullSecrets (defaults to push if not specified)
 
 For non-interactive installation, set environment variables:
 
 ```bash
 export CONTAINER_CMD=docker
 export PRIVATE_REGISTRY_URL=registry.example.com
-export PRIVATE_REGISTRY_USERNAME=admin
-export PRIVATE_REGISTRY_PASSWORD=secret
+
+# Push credentials (write access) - used to push images to registry
+export PRIVATE_REGISTRY_USERNAME=push-user
+export PRIVATE_REGISTRY_PASSWORD=push-secret
+
+# Pull credentials (read-only) - used for Kubernetes ImagePullSecrets
+# Optional: if not set, push credentials are used for both
+export PRIVATE_REGISTRY_PULL_USERNAME=pull-user
+export PRIVATE_REGISTRY_PULL_PASSWORD=pull-secret
+
 ./install.sh
 ```
+
+> **Note**: Separating push and pull credentials is a security best practice. The pull credentials stored in Kubernetes secrets should have **read-only** access to minimize risk if compromised.
 
 It will then automatically:
 1. Log in to your private registry

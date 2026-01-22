@@ -18,8 +18,15 @@
 # Environment variables for non-interactive mode:
 #   CONTAINER_CMD              - Container tool (docker or podman)
 #   PRIVATE_REGISTRY_URL       - Private registry URL
-#   PRIVATE_REGISTRY_USERNAME  - Registry username for pull secrets
-#   PRIVATE_REGISTRY_PASSWORD  - Registry password for pull secrets
+#
+#   Push credentials (write access - for pushing images to registry):
+#   PRIVATE_REGISTRY_USERNAME  - Registry username for pushing images
+#   PRIVATE_REGISTRY_PASSWORD  - Registry password for pushing images
+#
+#   Pull credentials (read-only - for cluster ImagePullSecrets):
+#   PRIVATE_REGISTRY_PULL_USERNAME  - Registry username for pull secrets (defaults to push username)
+#   PRIVATE_REGISTRY_PULL_PASSWORD  - Registry password for pull secrets (defaults to push password)
+#
 #   FORCE_PUSH                 - Set to "true" to force push images
 
 set -e
@@ -181,21 +188,48 @@ validate_registry_login() {
 }
 
 prompt_registry_credentials() {
-    # If credentials are already set via env vars, use them
+    # Push credentials (write access) for pushing images to registry
     if [[ -n "${PRIVATE_REGISTRY_USERNAME}" && -n "${PRIVATE_REGISTRY_PASSWORD}" ]]; then
-        echo "Using registry credentials from environment"
-        return
+        echo "Using push credentials from environment (PRIVATE_REGISTRY_USERNAME)"
+    else
+        echo ""
+        echo "Enter credentials for PUSHING images to registry (needs write access):"
+        read -p "Push username: " PRIVATE_REGISTRY_USERNAME
+        read -s -p "Push password: " PRIVATE_REGISTRY_PASSWORD
+        echo ""
+        
+        if [[ -z "${PRIVATE_REGISTRY_USERNAME}" || -z "${PRIVATE_REGISTRY_PASSWORD}" ]]; then
+            print_error "Push credentials are required for uploading images to registry."
+            exit 1
+        fi
     fi
     
-    echo ""
-    echo "Enter credentials for creating Kubernetes image pull secrets:"
-    read -p "Registry username: " PRIVATE_REGISTRY_USERNAME
-    read -s -p "Registry password: " PRIVATE_REGISTRY_PASSWORD
-    echo ""
-    
-    if [[ -z "${PRIVATE_REGISTRY_USERNAME}" || -z "${PRIVATE_REGISTRY_PASSWORD}" ]]; then
-        print_error "Username and password are required for image pull secrets."
-        exit 1
+    # Pull credentials (read-only) for Kubernetes ImagePullSecrets
+    # If not specified, defaults to push credentials
+    if [[ -n "${PRIVATE_REGISTRY_PULL_USERNAME}" && -n "${PRIVATE_REGISTRY_PULL_PASSWORD}" ]]; then
+        echo "Using separate pull credentials from environment (PRIVATE_REGISTRY_PULL_USERNAME)"
+    else
+        # Check if user wants separate pull credentials
+        echo ""
+        echo "Pull credentials for Kubernetes ImagePullSecrets (read-only access):"
+        echo "  Press Enter to use the same as push credentials, or enter different ones."
+        read -p "Pull username [${PRIVATE_REGISTRY_USERNAME}]: " input_pull_user
+        
+        if [[ -n "${input_pull_user}" ]]; then
+            PRIVATE_REGISTRY_PULL_USERNAME="${input_pull_user}"
+            read -s -p "Pull password: " PRIVATE_REGISTRY_PULL_PASSWORD
+            echo ""
+            
+            if [[ -z "${PRIVATE_REGISTRY_PULL_PASSWORD}" ]]; then
+                print_error "Pull password is required when specifying a different pull user."
+                exit 1
+            fi
+        else
+            # Use push credentials as pull credentials
+            PRIVATE_REGISTRY_PULL_USERNAME="${PRIVATE_REGISTRY_USERNAME}"
+            PRIVATE_REGISTRY_PULL_PASSWORD="${PRIVATE_REGISTRY_PASSWORD}"
+            echo "Using push credentials for pull secrets"
+        fi
     fi
 }
 
@@ -336,16 +370,16 @@ create_image_pull_secret() {
     if kubectl get secret "${secret_name}" -n "${namespace}" &>/dev/null; then
         echo "    Secret ${secret_name} already exists in ${namespace}"
     else
-        # Create docker config JSON and base64 encode it
+        # Use PULL credentials (read-only) for ImagePullSecrets
         local auth_string
-        auth_string=$(printf '%s:%s' "${PRIVATE_REGISTRY_USERNAME}" "${PRIVATE_REGISTRY_PASSWORD}" | base64 -w0 2>/dev/null || \
-                      printf '%s:%s' "${PRIVATE_REGISTRY_USERNAME}" "${PRIVATE_REGISTRY_PASSWORD}" | base64)
+        auth_string=$(printf '%s:%s' "${PRIVATE_REGISTRY_PULL_USERNAME}" "${PRIVATE_REGISTRY_PULL_PASSWORD}" | base64 -w0 2>/dev/null || \
+                      printf '%s:%s' "${PRIVATE_REGISTRY_PULL_USERNAME}" "${PRIVATE_REGISTRY_PULL_PASSWORD}" | base64)
         
         local docker_config_json
         docker_config_json=$(printf '{"auths":{"%s":{"username":"%s","password":"%s","auth":"%s"}}}' \
             "${PRIVATE_REGISTRY_URL}" \
-            "${PRIVATE_REGISTRY_USERNAME}" \
-            "${PRIVATE_REGISTRY_PASSWORD}" \
+            "${PRIVATE_REGISTRY_PULL_USERNAME}" \
+            "${PRIVATE_REGISTRY_PULL_PASSWORD}" \
             "${auth_string}")
         
         local encoded_config
